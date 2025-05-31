@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -10,33 +11,74 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useApi } from '../context/ApiContext';
 
+// Main component for displaying card details and managing bonuses
 export default function CardDetailScreen({ navigation, route }) {
-  const { card } = route.params;
-  const [bonuses, setBonuses] = useState(card.bonuses || []);
+  // Extracts the initial card data passed via navigation route parameters
+  const { card: initialCardFromRoute } = route.params;
+  // State to hold the card data, initialized with data from route, can be updated
+  const [currentCard, setCurrentCard] = useState(initialCardFromRoute);
+  // Hook to access API functions
   const api = useApi();
 
+  // Effect to update the screen title dynamically based on the current card's name
   React.useEffect(() => {
-    // Update navigation title with card name
-    navigation.setOptions({
-      title: card.cardName,
-    });
-  }, [navigation, card.cardName]);
+    if (currentCard) {
+      navigation.setOptions({
+        title: currentCard.cardName,
+      });
+    }
+  }, [navigation, currentCard]);
 
+  // Function to fetch and update the details of the current card
+  const loadCardDetails = useCallback(async () => {
+    const cardIdToLoad = initialCardFromRoute.id;
+
+    if (!cardIdToLoad) {
+      return;
+    }
+
+    try {
+      const allCards = await api.getCards();
+      const updatedCardFromServer = allCards.find(c => c.id === cardIdToLoad);
+
+      if (updatedCardFromServer) {
+        setCurrentCard(updatedCardFromServer);
+      } else {
+        Alert.alert('Card not found', 'This card may no longer exist.', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
+      }
+    } catch (error) {
+      console.error('Failed to refresh card details:', error);
+      Alert.alert('Error', 'Could not load updated card details. Please try again.');
+    }
+  }, [api, initialCardFromRoute.id, navigation]);
+
+  // Effect to load card details when the screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadCardDetails();
+      // Optional cleanup function when the screen goes out of focus
+      return () => {};
+    }, [loadCardDetails])
+  );
+
+  // Function to handle the deletion of the current card
   const handleDeleteCard = () => {
     Alert.alert(
       'Delete Card',
-      `Are you sure you want to delete "${card.cardName}"? This action cannot be undone.`,
+      `Are you sure you want to delete "${currentCard.cardName}"? This action cannot be undone.`,
       [
-        { 
-          text: 'Cancel', 
-          style: 'cancel' 
+        {
+          text: 'Cancel',
+          style: 'cancel'
         },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
             try {
-              await api.deleteCard(card.id);
+              await api.deleteCard(currentCard.id);
               navigation.navigate('CardList');
             } catch (error) {
               Alert.alert('Error', 'Failed to delete card. Please try again.');
@@ -48,22 +90,24 @@ export default function CardDetailScreen({ navigation, route }) {
     );
   };
 
+  // Function to handle the deletion of a specific bonus category
   const handleDeleteBonus = (bonus) => {
     Alert.alert(
       'Delete Bonus Category',
       `Are you sure you want to delete the "${bonus.categoryName}" bonus?`,
       [
-        { 
-          text: 'Cancel', 
-          style: 'cancel' 
+        {
+          text: 'Cancel',
+          style: 'cancel'
         },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
             try {
-              await api.deleteBonus(card.id, bonus.id);
-              setBonuses(bonuses.filter(b => b.id !== bonus.id));
+              await api.deleteBonus(currentCard.id, bonus.id);
+              loadCardDetails();
+              Alert.alert('Success', 'Bonus category deleted.');
             } catch (error) {
               Alert.alert('Error', 'Failed to delete bonus. Please try again.');
               console.error('Delete bonus error:', error);
@@ -74,6 +118,7 @@ export default function CardDetailScreen({ navigation, route }) {
     );
   };
 
+  // Utility function to format date strings for display
   const formatDate = (dateString) => {
     if (!dateString) return null;
     const date = new Date(dateString);
@@ -84,6 +129,7 @@ export default function CardDetailScreen({ navigation, route }) {
     });
   };
 
+  // Utility function to check if a bonus is currently active based on its dates
   const isActiveBonus = (bonus) => {
     const now = new Date();
     if (bonus.startDate && new Date(bonus.startDate) > now) return false;
@@ -91,40 +137,42 @@ export default function CardDetailScreen({ navigation, route }) {
     return true;
   };
 
-  const sortedBonuses = [...bonuses].sort((a, b) => {
-    // Active bonuses first
-    const aActive = isActiveBonus(a);
-    const bActive = isActiveBonus(b);
-    if (aActive && !bActive) return -1;
-    if (!aActive && bActive) return 1;
-    // Then by reward rate
-    return b.rewardRate - a.rewardRate;
-  });
+  // Memoized calculation for sorting bonuses to display
+  const sortedBonuses = React.useMemo(() => {
+    return [...(currentCard?.bonuses || [])].sort((a, b) => {
+      const aActive = isActiveBonus(a);
+      const bActive = isActiveBonus(b);
+      if (aActive && !bActive) return -1;
+      if (!aActive && bActive) return 1;
+      return (b.rewardRate || 0) - (a.rewardRate || 0);
+    });
+  }, [currentCard?.bonuses]);
 
+  // Main render method for the screen
   return (
     <ScrollView style={styles.container}>
-      {/* Card Header */}
+      {/* Section displaying general card information */}
       <View style={styles.cardHeader}>
         <View style={styles.cardIconLarge}>
           <Icon name="credit-card" size={48} color="#2196F3" />
         </View>
-        <Text style={styles.cardName}>{card.cardName}</Text>
-        {card.issuer && <Text style={styles.issuer}>{card.issuer}</Text>}
-        {card.defaultRewardRate && (
+        <Text style={styles.cardName}>{currentCard.cardName}</Text>
+        {currentCard.issuer && <Text style={styles.issuer}>{currentCard.issuer}</Text>}
+        {currentCard.defaultRewardRate != null && (
           <View style={styles.defaultRateContainer}>
             <Icon name="info-outline" size={16} color="#666" />
             <Text style={styles.defaultRate}>
-              Default: {card.defaultRewardRate}% on all purchases
+              Default: {currentCard.defaultRewardRate}% on all purchases
             </Text>
           </View>
         )}
       </View>
 
-      {/* Action Buttons */}
+      {/* Section for action buttons like Edit and Delete card */}
       <View style={styles.actions}>
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={() => navigation.navigate('AddEditCard', { card })}
+          onPress={() => navigation.navigate('AddEditCard', { card: currentCard })}
           activeOpacity={0.7}
         >
           <Icon name="edit" size={20} color="#2196F3" />
@@ -140,12 +188,12 @@ export default function CardDetailScreen({ navigation, route }) {
         </TouchableOpacity>
       </View>
 
-      {/* Bonus Categories Section */}
+      {/* Section for displaying and managing bonus categories */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Bonus Categories</Text>
           <TouchableOpacity
-            onPress={() => navigation.navigate('AddEditBonus', { cardId: card.id })}
+            onPress={() => navigation.navigate('AddEditBonus', { cardId: currentCard.id })}
             activeOpacity={0.7}
           >
             <Icon name="add-circle" size={28} color="#2196F3" />
@@ -153,18 +201,20 @@ export default function CardDetailScreen({ navigation, route }) {
         </View>
 
         {sortedBonuses.length === 0 ? (
+          // Displayed when there are no bonus categories
           <View style={styles.emptyBonuses}>
             <Icon name="category" size={48} color="#E0E0E0" />
             <Text style={styles.emptyText}>No bonus categories added yet</Text>
             <TouchableOpacity
               style={styles.addBonusButton}
-              onPress={() => navigation.navigate('AddEditBonus', { cardId: card.id })}
+              onPress={() => navigation.navigate('AddEditBonus', { cardId: currentCard.id })}
               activeOpacity={0.7}
             >
               <Text style={styles.addBonusButtonText}>Add First Bonus</Text>
             </TouchableOpacity>
           </View>
         ) : (
+          // Maps through and displays each bonus category
           sortedBonuses.map((bonus) => {
             const isActive = isActiveBonus(bonus);
             return (
@@ -205,9 +255,9 @@ export default function CardDetailScreen({ navigation, route }) {
                   <View style={styles.bonusActions}>
                     <TouchableOpacity
                       style={styles.iconButton}
-                      onPress={() => navigation.navigate('AddEditBonus', { 
-                        cardId: card.id, 
-                        bonus 
+                      onPress={() => navigation.navigate('AddEditBonus', {
+                        cardId: currentCard.id,
+                        bonus
                       })}
                       activeOpacity={0.7}
                     >
@@ -231,6 +281,7 @@ export default function CardDetailScreen({ navigation, route }) {
   );
 }
 
+// Stylesheet for the CardDetailScreen component
 const styles = StyleSheet.create({
   container: {
     flex: 1,
