@@ -11,7 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import DatePicker from 'react-native-date-picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useApi } from '../context/ApiContext';
 
@@ -346,37 +346,39 @@ export default function AddEditBonusScreen({ navigation, route }) {
       </ScrollView>
 
       {/* Date Pickers */}
-      <DatePicker
-        modal
-        open={showStartPicker}
-        date={startDate || new Date()}
-        onConfirm={(date) => {
-          setShowStartPicker(false);
-          setStartDate(date);
-          if (errors.dateRange) {
-            setErrors({ ...errors, dateRange: null });
-          }
-        }}
-        onCancel={() => setShowStartPicker(false)}
-        mode="date"
-        title="Select Start Date"
-      />
+      {showStartPicker && (
+        <DateTimePicker
+          value={startDate || new Date()}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(event, selectedDate) => {
+            setShowStartPicker(false);
+            if (selectedDate) {
+              setStartDate(selectedDate);
+              if (errors.dateRange) {
+                setErrors({ ...errors, dateRange: null });
+              }
+            }
+          }}
+        />
+      )}
 
-      <DatePicker
-        modal
-        open={showEndPicker}
-        date={endDate || new Date()}
-        onConfirm={(date) => {
-          setShowEndPicker(false);
-          setEndDate(date);
-          if (errors.dateRange) {
-            setErrors({ ...errors, dateRange: null });
-          }
-        }}
-        onCancel={() => setShowEndPicker(false)}
-        mode="date"
-        title="Select End Date"
-      />
+      {showEndPicker && (
+        <DateTimePicker
+          value={endDate || new Date()}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(event, selectedDate) => {
+            setShowEndPicker(false);
+            if (selectedDate) {
+              setEndDate(selectedDate);
+              if (errors.dateRange) {
+                setErrors({ ...errors, dateRange: null });
+              }
+            }
+          }}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }
