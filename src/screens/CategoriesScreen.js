@@ -1,5 +1,5 @@
 // src/screens/CategoriesScreen.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,22 +14,23 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DEFAULT_CATEGORIES } from '../config/categories';
-
-const CUSTOM_CATEGORIES_KEY = '@custom_categories';
+import { DEFAULT_CATEGORIES, CUSTOM_CATEGORIES_KEY, FAVORITE_CATEGORIES_KEY } from '../config/categories';
 
 export default function CategoriesScreen({ navigation }) {
   const [categories, setCategories] = useState([]);
   const [customCategories, setCustomCategories] = useState([]);
+  const [favoriteIds, setFavoriteIds] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [selectedIcon, setSelectedIcon] = useState('category');
   const [selectedColor, setSelectedColor] = useState('#666666');
   const [editingCategory, setEditingCategory] = useState(null);
 
-  // Load custom categories from storage
+  // Load custom categories and favorites from storage
   useEffect(() => {
     loadCustomCategories();
+    loadFavorites();
   }, []);
 
   const loadCustomCategories = async () => {
@@ -44,6 +45,17 @@ export default function CategoriesScreen({ navigation }) {
     }
   };
 
+  const loadFavorites = async () => {
+    try {
+      const stored = await AsyncStorage.getItem(FAVORITE_CATEGORIES_KEY);
+      if (stored) {
+        setFavoriteIds(JSON.parse(stored));
+      }
+    } catch (error) {
+      console.error('Error loading favorites:', error);
+    }
+  };
+
   const saveCustomCategories = async (categories) => {
     try {
       await AsyncStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(categories));
@@ -53,11 +65,45 @@ export default function CategoriesScreen({ navigation }) {
     }
   };
 
-  // Combine default and custom categories
-  useEffect(() => {
-    const combined = [...DEFAULT_CATEGORIES, ...customCategories];
-    setCategories(combined);
-  }, [customCategories]);
+  const toggleFavorite = async (categoryId) => {
+    try {
+      let newFavorites;
+      if (favoriteIds.includes(categoryId)) {
+        newFavorites = favoriteIds.filter(id => id !== categoryId);
+      } else {
+        newFavorites = [...favoriteIds, categoryId];
+      }
+      setFavoriteIds(newFavorites);
+      await AsyncStorage.setItem(FAVORITE_CATEGORIES_KEY, JSON.stringify(newFavorites));
+    } catch (error) {
+      console.error('Error saving favorites:', error);
+    }
+  };
+
+  // Filter and sort categories
+  const filteredAndSortedCategories = useMemo(() => {
+    // Combine default and custom categories
+    const allCategories = [...DEFAULT_CATEGORIES, ...customCategories];
+    
+    // Filter by search query
+    let filtered = allCategories;
+    if (searchQuery.trim()) {
+      filtered = allCategories.filter(cat =>
+        cat.name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    // Sort: favorites first, then alphabetical
+    return filtered.sort((a, b) => {
+      const aIsFavorite = favoriteIds.includes(a.id);
+      const bIsFavorite = favoriteIds.includes(b.id);
+      
+      if (aIsFavorite && !bIsFavorite) return -1;
+      if (!aIsFavorite && bIsFavorite) return 1;
+      
+      return a.name.localeCompare(b.name);
+    });
+  }, [customCategories, searchQuery, favoriteIds]);
 
   const handleAddCategory = () => {
     if (!newCategoryName.trim()) {
@@ -66,7 +112,8 @@ export default function CategoriesScreen({ navigation }) {
     }
 
     // Check if category already exists
-    const exists = categories.some(
+    const allCategories = [...DEFAULT_CATEGORIES, ...customCategories];
+    const exists = allCategories.some(
       cat => cat.name.toLowerCase() === newCategoryName.trim().toLowerCase()
     );
 
@@ -147,25 +194,55 @@ export default function CategoriesScreen({ navigation }) {
     setEditingCategory(null);
   };
 
-  const renderCategory = ({ item }) => (
-    <TouchableOpacity
-      style={styles.categoryItem}
-      onPress={() => handleEditCategory(item)}
-      onLongPress={() => handleDeleteCategory(item)}
-      activeOpacity={0.7}
-    >
-      <View style={[styles.categoryIcon, { backgroundColor: item.color + '20' }]}>
-        <Icon name={item.icon} size={24} color={item.color} />
-      </View>
-      <Text style={styles.categoryName}>{item.name}</Text>
-      {item.isCustom && (
-        <View style={styles.customBadge}>
-          <Text style={styles.customBadgeText}>Custom</Text>
+  const renderCategory = ({ item }) => {
+    const isFavorite = favoriteIds.includes(item.id);
+    
+    return (
+      <TouchableOpacity
+        style={styles.categoryItem}
+        onPress={() => handleEditCategory(item)}
+        onLongPress={() => handleDeleteCategory(item)}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.categoryIcon, { backgroundColor: item.color + '20' }]}>
+          <Icon name={item.icon} size={24} color={item.color} />
         </View>
-      )}
-      <Icon name="chevron-right" size={24} color="#999" />
-    </TouchableOpacity>
-  );
+        <Text style={styles.categoryName}>{item.name}</Text>
+        {item.isCustom && (
+          <View style={styles.customBadge}>
+            <Text style={styles.customBadgeText}>Custom</Text>
+          </View>
+        )}
+        <TouchableOpacity
+          style={styles.favoriteButton}
+          onPress={() => toggleFavorite(item.id)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Icon 
+            name={isFavorite ? 'star' : 'star-border'} 
+            size={24} 
+            color={isFavorite ? '#FFB800' : '#999'} 
+          />
+        </TouchableOpacity>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderSeparator = () => {
+    const firstNonFavoriteIndex = filteredAndSortedCategories.findIndex(
+      cat => !favoriteIds.includes(cat.id)
+    );
+    
+    if (firstNonFavoriteIndex === 0 || firstNonFavoriteIndex === -1 || searchQuery.trim()) {
+      return null;
+    }
+
+    return (
+      <View style={styles.separator}>
+        <Text style={styles.separatorText}>All Categories</Text>
+      </View>
+    );
+  };
 
   const iconOptions = [
     'category', 'shopping-cart', 'local-gas-station', 'restaurant',
@@ -188,16 +265,57 @@ export default function CategoriesScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <View style={styles.searchContainer}>
+        <Icon name="search" size={20} color="#999" style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search categories..."
+          placeholderTextColor="#999"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          autoCorrect={false}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity
+            onPress={() => setSearchQuery('')}
+            style={styles.clearButton}
+          >
+            <Icon name="close" size={18} color="#999" />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {favoriteIds.length > 0 && searchQuery === '' && (
+        <View style={styles.favoritesHeader}>
+          <Icon name="star" size={16} color="#FFB800" />
+          <Text style={styles.favoritesHeaderText}>Favorites</Text>
+        </View>
+      )}
+
       <FlatList
-        data={categories}
+        data={filteredAndSortedCategories}
         renderItem={renderCategory}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={({ leadingItem }) => {
+          if (!leadingItem || searchQuery.trim()) return null;
+          const leadingIndex = filteredAndSortedCategories.indexOf(leadingItem);
+          const isLastFavorite = favoriteIds.includes(leadingItem.id) && 
+            (leadingIndex + 1 >= filteredAndSortedCategories.length || 
+             !favoriteIds.includes(filteredAndSortedCategories[leadingIndex + 1].id));
+          
+          return isLastFavorite ? renderSeparator() : null;
+        }}
         ListHeaderComponent={
           <View style={styles.header}>
             <Text style={styles.headerText}>
-              Manage your bonus categories here. Long press to delete custom categories.
+              Manage your bonus categories here. Tap the star to favorite, long press custom categories to delete.
             </Text>
+          </View>
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>No categories found</Text>
           </View>
         }
       />
@@ -318,6 +436,47 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    margin: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#333',
+    paddingVertical: 4,
+  },
+  clearButton: {
+    padding: 4,
+  },
+  favoritesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+    backgroundColor: '#fff',
+  },
+  favoritesHeaderText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    marginLeft: 6,
+  },
   listContent: {
     paddingBottom: 80,
   },
@@ -359,12 +518,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 12,
-    marginRight: 8,
+    marginRight: 12,
   },
   customBadgeText: {
     fontSize: 12,
     color: '#2196F3',
     fontWeight: '500',
+  },
+  favoriteButton: {
+    padding: 4,
+  },
+  separator: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    backgroundColor: '#f8f8f8',
+  },
+  separatorText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+  },
+  emptyState: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#999',
   },
   fab: {
     position: 'absolute',
