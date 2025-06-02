@@ -33,6 +33,24 @@ export default function AddEditCardScreen({ navigation, route }) {
   
   const api = useApi();
 
+  const handlePickImage = async () => {
+    if (uploadingImage) return;
+
+    const localUri = await pickImage();
+    if (localUri) {
+      setImageUri(localUri);
+      setImageChanged(true);
+      if (isEdit && card?.imageUrl) {
+      }
+    }
+  };
+
+  const handleRemoveImage = async () => {
+    if (uploadingImage) return;
+    setImageUri(null);
+    setImageChanged(true);
+  };
+
   const validateForm = () => {
     const newErrors = {};
     
@@ -50,37 +68,64 @@ export default function AddEditCardScreen({ navigation, route }) {
   };
 
   const handleSave = async () => {
-    if (!validateForm()) {
+    if (!validateForm() || uploadingImage) {
       return;
     }
 
-    const cardData = {
-      cardName: cardName.trim(),
-      issuer: issuer.trim(),
-      defaultRewardRate: parseFloat(defaultRewardRate) || 1,
-    };
+    setLoading(true);
+    let finalImageUrl = card?.imageUrl || null;
 
     try {
-      setLoading(true);
+      if (imageChanged) {
+        if (card?.imageUrl && imageUri !== card.imageUrl) {
+          // An old image existed and is being replaced or removed
+          setUploadingImage(true); // Indicate activity for image operations
+          await deleteCardImage(card.imageUrl);
+          finalImageUrl = null; // Old image is gone
+          setUploadingImage(false);
+        }
+        if (imageUri) {
+          // A new image was selected or an existing one was kept (but re-selected)
+          setUploadingImage(true);
+          finalImageUrl = await uploadCardImage(imageUri, card?.id || `new-${Date.now()}`);
+          setUploadingImage(false);
+        }
+      }
+
+      const cardData = {
+        cardName: cardName.trim(),
+        issuer: issuer.trim(),
+        defaultRewardRate: parseFloat(defaultRewardRate) || 1,
+        imageUrl: finalImageUrl, // Use the potentially updated image URL
+      };
+
       if (isEdit) {
         await api.updateCard(card.id, cardData);
         Alert.alert('Success', 'Card updated successfully');
       } else {
-        await api.createCard(cardData);
+        const newCard = await api.createCard(cardData);
+        // If a new image was uploaded for a new card, and we didn't have the ID before
+        if (imageUri && imageChanged && !card?.id && newCard?.id && finalImageUrl?.includes(`new-${Date.now()}`)) {
+            // This case is a bit tricky, if the uploadCardImage needed the ID
+            // which it doesn't seem to in your current service, but if it did,
+            // you might need a two-step save or update the image URL post-creation.
+            // For now, assuming uploadCardImage can work with a temporary ID or handles it.
+        }
         Alert.alert('Success', 'Card added successfully');
       }
       navigation.goBack();
     } catch (error) {
       Alert.alert(
-        'Error', 
+        'Error',
         `Failed to ${isEdit ? 'update' : 'create'} card. Please try again.`
       );
       console.error('Save card error:', error);
     } finally {
       setLoading(false);
+      setUploadingImage(false);
     }
   };
-
+  
   return (
     <KeyboardAvoidingView 
       style={styles.container}
@@ -288,6 +333,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
     padding: 8,
+    alignSelf: 'center'
   },
   removeImageText: {
     marginLeft: 4,
