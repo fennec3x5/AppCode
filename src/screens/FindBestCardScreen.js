@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import { useApi } from '../context/ApiContext';
 import { DEFAULT_CATEGORIES, CUSTOM_CATEGORIES_KEY, FAVORITE_CATEGORIES_KEY } from '../config/categories';
 import CategoryPickerModal from '../components/CategoryPickerModal';
@@ -29,8 +30,14 @@ export default function FindBestCardScreen() {
   // Load categories and favorites on mount
   useEffect(() => {
     loadCategories();
-    loadFavorites();
   }, []);
+
+  // Reload favorites when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadFavorites();
+    }, [categories])
+  );
 
   // Update favorite categories when categories or favorites change
   useEffect(() => {
@@ -238,7 +245,7 @@ export default function FindBestCardScreen() {
           </TouchableOpacity>
         </View>
 
-        {!searched && favoriteCategories.length > 0 && (
+        {favoriteCategories.length > 0 && (
           <View style={styles.favoritesContainer}>
             <View style={styles.favoritesHeader}>
               <Icon name="star" size={16} color="#FFB800" />
