@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,17 +10,21 @@ import {
   Switch,
   KeyboardAvoidingView,
   Platform,
+  Modal,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApi } from '../context/ApiContext';
+import { DEFAULT_CATEGORIES, CUSTOM_CATEGORIES_KEY } from '../config/categories';
+import CategoryPickerModal from '../components/CategoryPickerModal';
 
 export default function AddEditBonusScreen({ navigation, route }) {
   const { cardId, bonus } = route.params;
   const isEdit = !!bonus;
   
   // Form state
-  const [categoryName, setCategoryName] = useState(bonus?.categoryName || '');
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [rewardRate, setRewardRate] = useState(bonus?.rewardRate?.toString() || '');
   const [rewardType, setRewardType] = useState(bonus?.rewardType || 'percentage');
   const [startDate, setStartDate] = useState(
@@ -37,14 +41,93 @@ export default function AddEditBonusScreen({ navigation, route }) {
   const [errors, setErrors] = useState({});
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
   
   const api = useApi();
+
+  // Load categories on mount
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
+  // If editing, find the category
+  useEffect(() => {
+    if (isEdit && bonus && categories.length > 0) {
+      const category = categories.find(cat => 
+        cat.name.toLowerCase() === bonus.categoryName.toLowerCase()
+      );
+      if (category) {
+        setSelectedCategory(category);
+      } else {
+        // If category not found, create a temporary one
+        setSelectedCategory({
+          id: 'temp',
+          name: bonus.categoryName,
+          icon: 'category',
+          color: '#666',
+        });
+      }
+    }
+  }, [isEdit, bonus, categories]);
+
+  const loadCategories = async () => {
+    try {
+      const stored = await AsyncStorage.getItem(CUSTOM_CATEGORIES_KEY);
+      const customCategories = stored ? JSON.parse(stored) : [];
+      setCategories([...DEFAULT_CATEGORIES, ...customCategories]);
+    } catch (error) {
+      console.error('Error loading categories:', error);
+      setCategories(DEFAULT_CATEGORIES);
+    }
+  };
+
+  const handleAddNewCategory = async () => {
+    if (!newCategoryName.trim()) {
+      Alert.alert('Error', 'Please enter a category name');
+      return;
+    }
+
+    const exists = categories.some(
+      cat => cat.name.toLowerCase() === newCategoryName.trim().toLowerCase()
+    );
+
+    if (exists) {
+      Alert.alert('Error', 'This category already exists');
+      return;
+    }
+
+    const newCategory = {
+      id: `custom_${Date.now()}`,
+      name: newCategoryName.trim(),
+      icon: 'category',
+      color: '#666666',
+      isCustom: true,
+    };
+
+    try {
+      const stored = await AsyncStorage.getItem(CUSTOM_CATEGORIES_KEY);
+      const customCategories = stored ? JSON.parse(stored) : [];
+      const updated = [...customCategories, newCategory];
+      await AsyncStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(updated));
+      
+      // Update local state
+      setCategories([...categories, newCategory]);
+      setSelectedCategory(newCategory);
+      setShowAddCategoryModal(false);
+      setNewCategoryName('');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add category');
+    }
+  };
 
   const validateForm = () => {
     const newErrors = {};
     
-    if (!categoryName.trim()) {
-      newErrors.categoryName = 'Category name is required';
+    if (!selectedCategory) {
+      newErrors.category = 'Please select a category';
     }
     
     if (!rewardRate.trim()) {
@@ -70,7 +153,7 @@ export default function AddEditBonusScreen({ navigation, route }) {
     }
 
     const bonusData = {
-      categoryName: categoryName.trim(),
+      categoryName: selectedCategory.name,
       rewardRate: parseFloat(rewardRate),
       rewardType,
       startDate: startDate?.toISOString() || null,
@@ -120,29 +203,30 @@ export default function AddEditBonusScreen({ navigation, route }) {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.form}>
-          {/* Category Name */}
+          {/* Category Selection */}
           <View style={styles.inputGroup}>
             <Text style={styles.label}>
-              Category Name <Text style={styles.required}>*</Text>
+              Category <Text style={styles.required}>*</Text>
             </Text>
-            <View style={[styles.inputContainer, errors.categoryName && styles.inputError]}>
-              <TextInput
-                style={styles.input}
-                value={categoryName}
-                onChangeText={(text) => {
-                  setCategoryName(text);
-                  if (errors.categoryName) {
-                    setErrors({ ...errors, categoryName: null });
-                  }
-                }}
-                placeholder="e.g., Groceries, Dining, Gas"
-                placeholderTextColor="#999"
-                autoFocus={!isEdit}
-                maxLength={30}
-              />
-            </View>
-            {errors.categoryName && (
-              <Text style={styles.errorText}>{errors.categoryName}</Text>
+            <TouchableOpacity
+              style={[styles.categorySelector, errors.category && styles.inputError]}
+              onPress={() => setShowCategoryPicker(true)}
+              activeOpacity={0.7}
+            >
+              {selectedCategory ? (
+                <>
+                  <View style={[styles.selectedCategoryIcon, { backgroundColor: selectedCategory.color + '20' }]}>
+                    <Icon name={selectedCategory.icon} size={20} color={selectedCategory.color} />
+                  </View>
+                  <Text style={styles.selectedCategoryText}>{selectedCategory.name}</Text>
+                </>
+              ) : (
+                <Text style={styles.placeholderText}>Select a category</Text>
+              )}
+              <Icon name="arrow-drop-down" size={24} color="#666" />
+            </TouchableOpacity>
+            {errors.category && (
+              <Text style={styles.errorText}>{errors.category}</Text>
             )}
           </View>
 
@@ -345,6 +429,64 @@ export default function AddEditBonusScreen({ navigation, route }) {
         </View>
       </ScrollView>
 
+      {/* Category Picker Modal */}
+      <CategoryPickerModal
+        visible={showCategoryPicker}
+        onClose={() => setShowCategoryPicker(false)}
+        onSelect={(category) => {
+          setSelectedCategory(category);
+          if (errors.category) {
+            setErrors({ ...errors, category: null });
+          }
+        }}
+        categories={categories}
+        selectedCategory={selectedCategory}
+        allowAddNew={true}
+        onAddNew={() => setShowAddCategoryModal(true)}
+      />
+
+      {/* Add New Category Modal */}
+      <Modal
+        visible={showAddCategoryModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowAddCategoryModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.addCategoryModalContent}>
+            <Text style={styles.modalTitle}>Add New Category</Text>
+            <TextInput
+              style={styles.newCategoryInput}
+              value={newCategoryName}
+              onChangeText={setNewCategoryName}
+              placeholder="Category name"
+              placeholderTextColor="#999"
+              autoFocus
+            />
+            <Text style={styles.addCategoryHint}>
+              You can customize the icon and color in the Categories screen
+            </Text>
+            <View style={styles.addCategoryButtons}>
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButton]}
+                onPress={() => {
+                  setShowAddCategoryModal(false);
+                  setNewCategoryName('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, styles.saveButton]}
+                onPress={handleAddNewCategory}
+              >
+                <Text style={styles.saveButtonText}>Add</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Date Pickers */}
       {showStartPicker && (
         <DateTimePicker
@@ -414,6 +556,33 @@ const styles = StyleSheet.create({
   },
   required: {
     color: '#f44336',
+  },
+  categorySelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#f8f8f8',
+  },
+  selectedCategoryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  selectedCategoryText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#333',
+  },
+  placeholderText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#999',
   },
   inputContainer: {
     flexDirection: 'row',
@@ -588,5 +757,40 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#333',
+  },
+  addCategoryModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+  },
+  newCategoryInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: '#f8f8f8',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  addCategoryHint: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 20,
+  },
+  addCategoryButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
 });

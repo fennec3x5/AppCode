@@ -9,7 +9,11 @@ import {
   Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApi } from '../context/ApiContext';
+import { DEFAULT_CATEGORIES } from '../config/categories';
+
+const CUSTOM_CATEGORIES_KEY = '@custom_categories';
 
 // Main component for displaying card details and managing bonuses
 export default function CardDetailScreen({ navigation, route }) {
@@ -17,6 +21,8 @@ export default function CardDetailScreen({ navigation, route }) {
   const { card: initialCardFromRoute } = route.params;
   // State to hold the card data, initialized with data from route, can be updated
   const [currentCard, setCurrentCard] = useState(initialCardFromRoute);
+  // State to hold categories
+  const [categories, setCategories] = useState([]);
   // Hook to access API functions
   const api = useApi();
 
@@ -28,6 +34,34 @@ export default function CardDetailScreen({ navigation, route }) {
       });
     }
   }, [navigation, currentCard]);
+
+  // Load categories on mount
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
+  const loadCategories = async () => {
+    try {
+      const stored = await AsyncStorage.getItem(CUSTOM_CATEGORIES_KEY);
+      const customCategories = stored ? JSON.parse(stored) : [];
+      setCategories([...DEFAULT_CATEGORIES, ...customCategories]);
+    } catch (error) {
+      console.error('Error loading categories:', error);
+      setCategories(DEFAULT_CATEGORIES);
+    }
+  };
+
+  // Function to get category info by name
+  const getCategoryInfo = (categoryName) => {
+    const category = categories.find(cat => 
+      cat.name.toLowerCase() === categoryName.toLowerCase()
+    );
+    return category || {
+      name: categoryName,
+      icon: 'category',
+      color: '#666666'
+    };
+  };
 
   // Function to fetch and update the details of the current card
   const loadCardDetails = useCallback(async () => {
@@ -58,6 +92,7 @@ export default function CardDetailScreen({ navigation, route }) {
   useFocusEffect(
     useCallback(() => {
       loadCardDetails();
+      loadCategories(); // Reload categories in case they were updated
       // Optional cleanup function when the screen goes out of focus
       return () => {};
     }, [loadCardDetails])
@@ -217,6 +252,7 @@ export default function CardDetailScreen({ navigation, route }) {
           // Maps through and displays each bonus category
           sortedBonuses.map((bonus) => {
             const isActive = isActiveBonus(bonus);
+            const categoryInfo = getCategoryInfo(bonus.categoryName);
             return (
               <View
                 key={bonus.id}
@@ -225,6 +261,9 @@ export default function CardDetailScreen({ navigation, route }) {
                 <View style={styles.bonusContent}>
                   <View style={styles.bonusInfo}>
                     <View style={styles.bonusHeader}>
+                      <View style={[styles.bonusCategoryIcon, { backgroundColor: categoryInfo.color + '20' }]}>
+                        <Icon name={categoryInfo.icon} size={20} color={categoryInfo.color} />
+                      </View>
                       <Text style={styles.categoryName}>{bonus.categoryName}</Text>
                       {!isActive && (
                         <View style={styles.inactiveBadge}>
@@ -417,10 +456,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  bonusCategoryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
   categoryName: {
     fontSize: 18,
     fontWeight: '600',
     color: '#333',
+    flex: 1,
   },
   inactiveBadge: {
     marginLeft: 8,

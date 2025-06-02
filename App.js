@@ -11,6 +11,7 @@ import CardDetailScreen from './src/screens/CardDetailScreen';
 import AddEditCardScreen from './src/screens/AddEditCardScreen';
 import FindBestCardScreen from './src/screens/FindBestCardScreen';
 import AddEditBonusScreen from './src/screens/AddEditBonusScreen';
+import CategoriesScreen from './src/screens/CategoriesScreen';
 
 // Import API provider
 import { ApiProvider } from './src/context/ApiContext';
@@ -73,6 +74,8 @@ export default function App() {
                   iconName = 'credit-card';
                 } else if (route.name === 'Find Best Card') {
                   iconName = 'search';
+                } else if (route.name === 'Categories') {
+                  iconName = 'category';
                 }
                 return <Icon name={iconName} size={size} color={color} />;
               },
@@ -95,6 +98,10 @@ export default function App() {
             <Tab.Screen 
               name="Find Best Card" 
               component={FindBestCardScreen} 
+            />
+            <Tab.Screen 
+              name="Categories" 
+              component={CategoriesScreen} 
             />
           </Tab.Navigator>
         </NavigationContainer>

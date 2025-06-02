@@ -2,48 +2,86 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   FlatList,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Keyboard,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApi } from '../context/ApiContext';
+import { DEFAULT_CATEGORIES, CUSTOM_CATEGORIES_KEY, FAVORITE_CATEGORIES_KEY } from '../config/categories';
+import CategoryPickerModal from '../components/CategoryPickerModal';
 
 export default function FindBestCardScreen() {
-  const [category, setCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [favoriteCategories, setFavoriteCategories] = useState([]);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [recentSearches, setRecentSearches] = useState([
-    'Groceries',
-    'Dining',
-    'Gas',
-    'Travel',
-    'Online Shopping'
-  ]);
   
   const api = useApi();
 
-  const handleSearch = async (searchTerm = category) => {
-    if (!searchTerm.trim()) return;
+  // Load categories and favorites on mount
+  useEffect(() => {
+    loadCategories();
+    loadFavorites();
+  }, []);
 
-    Keyboard.dismiss();
+  // Update favorite categories when categories or favorites change
+  useEffect(() => {
+    updateFavoriteCategories();
+  }, [categories]);
+
+  const loadCategories = async () => {
+    try {
+      const stored = await AsyncStorage.getItem(CUSTOM_CATEGORIES_KEY);
+      const customCategories = stored ? JSON.parse(stored) : [];
+      setCategories([...DEFAULT_CATEGORIES, ...customCategories]);
+    } catch (error) {
+      console.error('Error loading categories:', error);
+      setCategories(DEFAULT_CATEGORIES);
+    }
+  };
+
+  const loadFavorites = async () => {
+    try {
+      const stored = await AsyncStorage.getItem(FAVORITE_CATEGORIES_KEY);
+      if (stored) {
+        const favoriteIds = JSON.parse(stored);
+        updateFavoriteCategories(favoriteIds);
+      }
+    } catch (error) {
+      console.error('Error loading favorites:', error);
+    }
+  };
+
+  const updateFavoriteCategories = async (favoriteIds = null) => {
+    try {
+      if (!favoriteIds) {
+        const stored = await AsyncStorage.getItem(FAVORITE_CATEGORIES_KEY);
+        favoriteIds = stored ? JSON.parse(stored) : [];
+      }
+      
+      const favorites = categories.filter(cat => favoriteIds.includes(cat.id));
+      setFavoriteCategories(favorites);
+    } catch (error) {
+      console.error('Error updating favorite categories:', error);
+    }
+  };
+
+  const handleSearch = async () => {
+    if (!selectedCategory) return;
     
     try {
       setLoading(true);
       setSearched(true);
-      const data = await api.findBestCard(searchTerm);
+      const data = await api.findBestCard(selectedCategory.name);
       setResults(data);
-      
-      // Add to recent searches if not already there
-      if (!recentSearches.includes(searchTerm)) {
-        setRecentSearches([searchTerm, ...recentSearches.slice(0, 4)]);
-      }
     } catch (error) {
       console.error('Search error:', error);
       setResults([]);
@@ -52,8 +90,20 @@ export default function FindBestCardScreen() {
     }
   };
 
+  const getCategoryInfo = (categoryName) => {
+    const category = categories.find(cat => 
+      cat.name.toLowerCase() === categoryName.toLowerCase()
+    );
+    return category || {
+      name: categoryName,
+      icon: 'category',
+      color: '#666666'
+    };
+  };
+
   const renderResult = ({ item, index }) => {
     const isTopResult = index === 0;
+    const categoryInfo = getCategoryInfo(item.categoryName);
     
     return (
       <View style={[
@@ -83,9 +133,14 @@ export default function FindBestCardScreen() {
           </View>
           
           <View style={styles.rewardContainer}>
-            <Text style={styles.categoryMatch}>
-              {item.isDefault ? 'All purchases' : item.categoryName}
-            </Text>
+            <View style={styles.categoryWithIcon}>
+              <View style={[styles.resultCategoryIcon, { backgroundColor: categoryInfo.color + '20' }]}>
+                <Icon name={categoryInfo.icon} size={16} color={categoryInfo.color} />
+              </View>
+              <Text style={styles.categoryMatch}>
+                {item.isDefault ? 'All purchases' : item.categoryName}
+              </Text>
+            </View>
             <Text style={[
               styles.rewardRate,
               isTopResult && styles.topRewardRate
@@ -117,16 +172,26 @@ export default function FindBestCardScreen() {
     );
   };
 
-  const renderQuickSearch = ({ item }) => (
+  const renderFavoriteCategory = ({ item }) => (
     <TouchableOpacity
-      style={styles.quickSearchChip}
+      style={[
+        styles.favoriteChip,
+        selectedCategory?.id === item.id && styles.favoriteChipSelected
+      ]}
       onPress={() => {
-        setCategory(item);
-        handleSearch(item);
+        setSelectedCategory(item);
+        setSearched(false);
+        setResults([]);
       }}
       activeOpacity={0.7}
     >
-      <Text style={styles.quickSearchText}>{item}</Text>
+      <Icon name={item.icon} size={16} color={item.color} style={styles.favoriteIcon} />
+      <Text style={[
+        styles.favoriteText,
+        selectedCategory?.id === item.id && styles.favoriteTextSelected
+      ]}>
+        {item.name}
+      </Text>
     </TouchableOpacity>
   );
 
@@ -138,40 +203,31 @@ export default function FindBestCardScreen() {
       <View style={styles.searchSection}>
         <Text style={styles.searchTitle}>Find Your Best Card</Text>
         <Text style={styles.searchSubtitle}>
-          Enter a spending category to see which card gives you the most rewards
+          Select a category to see which card gives you the most rewards
         </Text>
         
         <View style={styles.searchContainer}>
-          <View style={styles.searchInputContainer}>
-            <Icon name="search" size={24} color="#999" style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              value={category}
-              onChangeText={setCategory}
-              placeholder="What are you buying?"
-              placeholderTextColor="#999"
-              returnKeyType="search"
-              onSubmitEditing={() => handleSearch()}
-              autoCapitalize="words"
-            />
-            {category.length > 0 && (
-              <TouchableOpacity
-                onPress={() => {
-                  setCategory('');
-                  setSearched(false);
-                  setResults([]);
-                }}
-                style={styles.clearButton}
-                activeOpacity={0.7}
-              >
-                <Icon name="close" size={20} color="#999" />
-              </TouchableOpacity>
-            )}
-          </View>
           <TouchableOpacity
-            style={styles.searchButton}
-            onPress={() => handleSearch()}
-            disabled={loading || !category.trim()}
+            style={styles.categorySelector}
+            onPress={() => setShowCategoryPicker(true)}
+            activeOpacity={0.7}
+          >
+            {selectedCategory ? (
+              <>
+                <View style={[styles.selectedCategoryIcon, { backgroundColor: selectedCategory.color + '20' }]}>
+                  <Icon name={selectedCategory.icon} size={20} color={selectedCategory.color} />
+                </View>
+                <Text style={styles.selectedCategoryText}>{selectedCategory.name}</Text>
+              </>
+            ) : (
+              <Text style={styles.placeholderText}>Select a category</Text>
+            )}
+            <Icon name="arrow-drop-down" size={24} color="#666" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.searchButton, !selectedCategory && styles.searchButtonDisabled]}
+            onPress={handleSearch}
+            disabled={loading || !selectedCategory}
             activeOpacity={0.7}
           >
             {loading ? (
@@ -182,16 +238,19 @@ export default function FindBestCardScreen() {
           </TouchableOpacity>
         </View>
 
-        {!searched && (
-          <View style={styles.quickSearchContainer}>
-            <Text style={styles.quickSearchLabel}>Popular categories:</Text>
+        {!searched && favoriteCategories.length > 0 && (
+          <View style={styles.favoritesContainer}>
+            <View style={styles.favoritesHeader}>
+              <Icon name="star" size={16} color="#FFB800" />
+              <Text style={styles.favoritesLabel}>Favorite categories:</Text>
+            </View>
             <FlatList
               horizontal
-              data={recentSearches}
-              renderItem={renderQuickSearch}
-              keyExtractor={(item) => item}
+              data={favoriteCategories}
+              renderItem={renderFavoriteCategory}
+              keyExtractor={(item) => item.id}
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.quickSearchList}
+              contentContainerStyle={styles.favoritesList}
             />
           </View>
         )}
@@ -206,7 +265,7 @@ export default function FindBestCardScreen() {
           ListHeaderComponent={
             results.length > 0 && (
               <Text style={styles.resultsHeader}>
-                Found {results.length} card{results.length !== 1 ? 's' : ''} for "{category}"
+                Found {results.length} card{results.length !== 1 ? 's' : ''} for {selectedCategory.name}
               </Text>
             )
           }
@@ -214,15 +273,15 @@ export default function FindBestCardScreen() {
             <View style={styles.emptyState}>
               <Icon name="search-off" size={64} color="#E0E0E0" />
               <Text style={styles.emptyText}>
-                No cards found for "{category}"
+                No cards found for {selectedCategory.name}
               </Text>
               <Text style={styles.emptySubtext}>
-                Try a different category or add bonus categories to your cards
+                Add bonus categories to your cards to see them here
               </Text>
               <TouchableOpacity
                 style={styles.tryAgainButton}
                 onPress={() => {
-                  setCategory('');
+                  setSelectedCategory(null);
                   setSearched(false);
                   setResults([]);
                 }}
@@ -234,6 +293,19 @@ export default function FindBestCardScreen() {
           }
         />
       )}
+
+      {/* Category Picker Modal */}
+      <CategoryPickerModal
+        visible={showCategoryPicker}
+        onClose={() => setShowCategoryPicker(false)}
+        onSelect={(category) => {
+          setSelectedCategory(category);
+          setSearched(false);
+          setResults([]);
+        }}
+        categories={categories}
+        selectedCategory={selectedCategory}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -273,7 +345,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  searchInputContainer: {
+  categorySelector: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -281,20 +353,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 8,
+    padding: 12,
     marginRight: 12,
   },
-  searchIcon: {
-    paddingLeft: 12,
+  selectedCategoryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  searchInput: {
+  selectedCategoryText: {
     flex: 1,
-    padding: 12,
     fontSize: 16,
     color: '#333',
   },
-  clearButton: {
-    padding: 8,
-    marginRight: 4,
+  placeholderText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#999',
   },
   searchButton: {
     backgroundColor: '#2196F3',
@@ -304,35 +382,55 @@ const styles = StyleSheet.create({
     minWidth: 80,
     alignItems: 'center',
   },
+  searchButtonDisabled: {
+    backgroundColor: '#ccc',
+  },
   searchButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
-  quickSearchContainer: {
+  favoritesContainer: {
     marginTop: 8,
   },
-  quickSearchLabel: {
-    fontSize: 13,
-    color: '#666',
+  favoritesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 8,
   },
-  quickSearchList: {
+  favoritesLabel: {
+    fontSize: 13,
+    color: '#666',
+    marginLeft: 6,
+  },
+  favoritesList: {
     paddingVertical: 4,
   },
-  quickSearchChip: {
-    backgroundColor: '#E3F2FD',
+  favoriteChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f8f8',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     marginRight: 8,
     borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  favoriteChipSelected: {
+    backgroundColor: '#E3F2FD',
     borderColor: '#2196F3',
   },
-  quickSearchText: {
-    color: '#2196F3',
+  favoriteIcon: {
+    marginRight: 6,
+  },
+  favoriteText: {
+    color: '#666',
     fontSize: 14,
     fontWeight: '500',
+  },
+  favoriteTextSelected: {
+    color: '#2196F3',
   },
   resultsHeader: {
     fontSize: 16,
@@ -407,6 +505,19 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,
+  },
+  categoryWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  resultCategoryIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
   },
   categoryMatch: {
     fontSize: 16,
