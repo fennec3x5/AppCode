@@ -188,9 +188,13 @@ export default function CardDetailScreen({ navigation, route }) {
     <ScrollView style={styles.container}>
       {/* Section displaying general card information */}
       <View style={styles.cardHeader}>
-        <View style={styles.cardIconLarge}>
-          <Icon name="credit-card" size={48} color="#2196F3" />
-        </View>
+        {currentCard.imageUrl ? (
+          <Image source={{ uri: currentCard.imageUrl }} style={styles.cardImage} />
+        ) : (
+          <View style={styles.cardIconLarge}>
+            <Icon name="credit-card" size={48} color="#2196F3" />
+          </View>
+        )}
         <Text style={styles.cardName}>{currentCard.cardName}</Text>
         {currentCard.issuer && <Text style={styles.issuer}>{currentCard.issuer}</Text>}
         {currentCard.defaultRewardRate != null && (
@@ -333,10 +337,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
+  cardImage: {
+    width: 280,
+    height: 175,
+    borderRadius: 12,
+    marginBottom: 16,
+    backgroundColor: '#f8f8f8',
+  },
   cardIconLarge: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 280,
+    height: 175,
+    borderRadius: 12,
     backgroundColor: '#E3F2FD',
     justifyContent: 'center',
     alignItems: 'center',

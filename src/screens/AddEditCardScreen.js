@@ -9,9 +9,12 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useApi } from '../context/ApiContext';
+import { pickImage, uploadCardImage, deleteCardImage } from '../services/ImageUploadService';
 
 export default function AddEditCardScreen({ navigation, route }) {
   const card = route.params?.card;
@@ -22,6 +25,9 @@ export default function AddEditCardScreen({ navigation, route }) {
   const [defaultRewardRate, setDefaultRewardRate] = useState(
     card?.defaultRewardRate?.toString() || '1'
   );
+  const [imageUri, setImageUri] = useState(card?.imageUrl || null);
+  const [imageChanged, setImageChanged] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   
@@ -85,9 +91,38 @@ export default function AddEditCardScreen({ navigation, route }) {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.form}>
-          {/* Card Icon */}
-          <View style={styles.iconContainer}>
-            <Icon name="credit-card" size={64} color="#2196F3" />
+          {/* Card Image */}
+          <View style={styles.imageSection}>
+            <Text style={styles.label}>Card Image</Text>
+            <TouchableOpacity
+              style={styles.imageContainer}
+              onPress={handlePickImage}
+              activeOpacity={0.7}
+            >
+              {imageUri ? (
+                <Image source={{ uri: imageUri }} style={styles.cardImage} />
+              ) : (
+                <View style={styles.imagePlaceholder}>
+                  <Icon name="credit-card" size={48} color="#ccc" />
+                  <Text style={styles.imagePlaceholderText}>Tap to add card image</Text>
+                </View>
+              )}
+              {uploadingImage && (
+                <View style={styles.uploadingOverlay}>
+                  <ActivityIndicator size="large" color="#fff" />
+                </View>
+              )}
+            </TouchableOpacity>
+            {imageUri && (
+              <TouchableOpacity
+                style={styles.removeImageButton}
+                onPress={handleRemoveImage}
+                activeOpacity={0.7}
+              >
+                <Icon name="close" size={16} color="#f44336" />
+                <Text style={styles.removeImageText}>Remove image</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Card Name Input */}
@@ -210,6 +245,54 @@ const styles = StyleSheet.create({
   iconContainer: {
     alignItems: 'center',
     marginBottom: 24,
+  },
+  imageSection: {
+    marginBottom: 24,
+  },
+  imageContainer: {
+    alignItems: 'center',
+    marginTop: 8,
+    position: 'relative',
+  },
+  cardImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    backgroundColor: '#f8f8f8',
+  },
+  imagePlaceholder: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    backgroundColor: '#f8f8f8',
+    borderWidth: 2,
+    borderColor: '#ddd',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imagePlaceholderText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#999',
+  },
+  uploadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeImageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    padding: 8,
+  },
+  removeImageText: {
+    marginLeft: 4,
+    fontSize: 14,
+    color: '#f44336',
   },
   inputGroup: {
     marginBottom: 24,

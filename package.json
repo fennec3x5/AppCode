@@ -1,5 +1,5 @@
 {
-  "name": "appcode",
+  "name": "cashbacktracker",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
@@ -23,7 +23,9 @@
     "react-native-screens": "~4.10.0",
     "react-native-vector-icons": "^10.2.0",
     "react-native-gesture-handler": "~2.24.0",
-    "@react-native-community/datetimepicker": "8.3.0"
+    "@react-native-community/datetimepicker": "8.3.0",
+    "expo-image-picker": "~16.1.4",
+    "firebase": "^10.7.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0"

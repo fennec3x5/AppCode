@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useApi } from '../context/ApiContext';
@@ -69,8 +70,14 @@ export default function CardListScreen({ navigation }) {
         onPress={() => navigation.navigate('CardDetail', { card: item })}
         activeOpacity={0.7}
       >
-        <View style={styles.cardIcon}>
-          <Icon name="credit-card" size={32} color="#2196F3" />
+        <View style={styles.cardImageContainer}>
+          {item.imageUrl ? (
+            <Image source={{ uri: item.imageUrl }} style={styles.cardImage} />
+          ) : (
+            <View style={styles.cardIconPlaceholder}>
+              <Icon name="credit-card" size={32} color="#2196F3" />
+            </View>
+          )}
         </View>
         <View style={styles.cardInfo}>
           <Text style={styles.cardName} numberOfLines={1}>
@@ -172,14 +179,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  cardIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  cardImageContainer: {
+    width: 80,
+    height: 50,
+    marginRight: 12,
+  },
+  cardImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 8,
+    backgroundColor: '#f8f8f8',
+  },
+  cardIconPlaceholder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 8,
     backgroundColor: '#E3F2FD',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
   cardInfo: {
     flex: 1,
