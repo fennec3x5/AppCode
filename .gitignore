@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# Firebase secrets
+src/config/FirebaseSecrets.js
+
 # Expo
 .expo/
 dist/
