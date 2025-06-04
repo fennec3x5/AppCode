@@ -1,11 +1,11 @@
 import React, { createContext, useContext } from 'react';
 import axios from 'axios';
+import { API_KEY } from '../config/ApiSecrets';
 
 const ApiContext = createContext();
 
 // IMPORTANT: Update these values with your Firebase configuration
 const API_BASE_URL = 'https://api-ynyot3ho2q-uc.a.run.app';
-const API_KEY = 'a666ffed-b857-46e5-9d7a-2979a9c5201a';
 
 // Create axios instance with default config
 const api = axios.create({

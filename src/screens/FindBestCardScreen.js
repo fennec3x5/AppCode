@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -126,11 +127,19 @@ export default function FindBestCardScreen() {
         
         <View style={styles.resultContent}>
           <View style={styles.resultHeader}>
-            <Icon 
-              name="credit-card" 
-              size={32} 
-              color={isTopResult ? '#4CAF50' : '#2196F3'} 
-            />
+            <View style={styles.cardImageContainer}>
+              {item.imageUrl ? (
+                <Image source={{ uri: item.imageUrl }} style={styles.cardImage} />
+              ) : (
+                <View style={styles.cardIconPlaceholder}>
+                  <Icon 
+                    name="credit-card" 
+                    size={24} 
+                    color={isTopResult ? '#4CAF50' : '#2196F3'} 
+                  />
+                </View>
+              )}
+            </View>
             <View style={styles.resultInfo}>
               <Text style={styles.cardName}>{item.cardName}</Text>
               {item.issuer && (
@@ -490,9 +499,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  cardImageContainer: {
+    width: 64,
+    height: 40,
+    marginRight: 12,
+  },
+  cardImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 6,
+    backgroundColor: '#f8f8f8',
+  },
+  cardIconPlaceholder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 6,
+    backgroundColor: '#E3F2FD',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   resultInfo: {
     flex: 1,
-    marginLeft: 12,
   },
   cardName: {
     fontSize: 18,

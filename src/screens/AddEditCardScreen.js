@@ -40,8 +40,6 @@ export default function AddEditCardScreen({ navigation, route }) {
     if (localUri) {
       setImageUri(localUri);
       setImageChanged(true);
-      if (isEdit && card?.imageUrl) {
-      }
     }
   };
 
@@ -76,19 +74,36 @@ export default function AddEditCardScreen({ navigation, route }) {
     let finalImageUrl = card?.imageUrl || null;
 
     try {
+      // Handle image changes
       if (imageChanged) {
-        if (card?.imageUrl && imageUri !== card.imageUrl) {
-          // An old image existed and is being replaced or removed
-          setUploadingImage(true); // Indicate activity for image operations
-          await deleteCardImage(card.imageUrl);
-          finalImageUrl = null; // Old image is gone
+        // If we're removing the image
+        if (!imageUri) {
+          // Delete the old image if it exists
+          if (card?.imageUrl) {
+            setUploadingImage(true);
+            await deleteCardImage(card.imageUrl);
+            setUploadingImage(false);
+          }
+          finalImageUrl = null;
+        } 
+        // If we're adding or changing the image
+        else if (imageUri && imageUri.startsWith('file://')) {
+          // This is a new local image that needs to be uploaded
+          setUploadingImage(true);
+          
+          // Delete old image first if it exists
+          if (card?.imageUrl && card.imageUrl !== imageUri) {
+            await deleteCardImage(card.imageUrl);
+          }
+          
+          // Upload new image
+          const uploadId = card?.id || `temp-${Date.now()}`;
+          finalImageUrl = await uploadCardImage(imageUri, uploadId);
           setUploadingImage(false);
         }
-        if (imageUri) {
-          // A new image was selected or an existing one was kept (but re-selected)
-          setUploadingImage(true);
-          finalImageUrl = await uploadCardImage(imageUri, card?.id || `new-${Date.now()}`);
-          setUploadingImage(false);
+        // If imageUri is a URL (not changing the existing image)
+        else {
+          finalImageUrl = imageUri;
         }
       }
 
@@ -96,7 +111,7 @@ export default function AddEditCardScreen({ navigation, route }) {
         cardName: cardName.trim(),
         issuer: issuer.trim(),
         defaultRewardRate: parseFloat(defaultRewardRate) || 1,
-        imageUrl: finalImageUrl, // Use the potentially updated image URL
+        imageUrl: finalImageUrl,
       };
 
       if (isEdit) {
@@ -104,13 +119,6 @@ export default function AddEditCardScreen({ navigation, route }) {
         Alert.alert('Success', 'Card updated successfully');
       } else {
         const newCard = await api.createCard(cardData);
-        // If a new image was uploaded for a new card, and we didn't have the ID before
-        if (imageUri && imageChanged && !card?.id && newCard?.id && finalImageUrl?.includes(`new-${Date.now()}`)) {
-            // This case is a bit tricky, if the uploadCardImage needed the ID
-            // which it doesn't seem to in your current service, but if it did,
-            // you might need a two-step save or update the image URL post-creation.
-            // For now, assuming uploadCardImage can work with a temporary ID or handles it.
-        }
         Alert.alert('Success', 'Card added successfully');
       }
       navigation.goBack();
@@ -120,6 +128,15 @@ export default function AddEditCardScreen({ navigation, route }) {
         `Failed to ${isEdit ? 'update' : 'create'} card. Please try again.`
       );
       console.error('Save card error:', error);
+      
+      // If image upload failed, clean up any partially uploaded images
+      if (uploadingImage && finalImageUrl && finalImageUrl.startsWith('https://')) {
+        try {
+          await deleteCardImage(finalImageUrl);
+        } catch (cleanupError) {
+          console.error('Cleanup error:', cleanupError);
+        }
+      }
     } finally {
       setLoading(false);
       setUploadingImage(false);
@@ -253,11 +270,11 @@ export default function AddEditCardScreen({ navigation, route }) {
             <TouchableOpacity
               style={[styles.button, styles.saveButton]}
               onPress={handleSave}
-              disabled={loading}
+              disabled={loading || uploadingImage}
               activeOpacity={0.7}
             >
               <Text style={styles.saveButtonText}>
-                {loading ? 'Saving...' : 'Save'}
+                {loading || uploadingImage ? 'Saving...' : 'Save'}
               </Text>
             </TouchableOpacity>
           </View>

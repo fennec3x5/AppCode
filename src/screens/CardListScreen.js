@@ -13,6 +13,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useApi } from '../context/ApiContext';
 import { useFocusEffect } from '@react-navigation/native';
+import { PushNotificationService } from '../services/PushNotificationService';
 
 export default function CardListScreen({ navigation }) {
   const [cards, setCards] = useState([]);
@@ -32,6 +33,14 @@ export default function CardListScreen({ navigation }) {
       setLoading(true);
       const data = await api.getCards();
       setCards(data);
+      
+      // Check for expiring bonuses locally (for Expo Go)
+      if (PushNotificationService.isExpoGo()) {
+        const notificationCount = await PushNotificationService.checkExpiringBonusesLocally(data);
+        if (notificationCount > 0) {
+          console.log(`Scheduled ${notificationCount} expiry notifications`);
+        }
+      }
     } catch (error) {
       Alert.alert(
         'Error', 

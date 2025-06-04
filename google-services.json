@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "997274583552",
+    "project_id": "cc-cashback-tracker-402d1",
+    "storage_bucket": "cc-cashback-tracker-402d1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:997274583552:android:1a9800eb1699f3a0c50ee5",
+        "android_client_info": {
+          "package_name": "com.anonymous.AppCode"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAuSdUSKkpnWC_d1uAdhBpb1IyjqIwZUEk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

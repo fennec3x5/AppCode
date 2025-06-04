@@ -5,6 +5,7 @@ node_modules/
 
 # Firebase secrets
 src/config/FirebaseSecrets.js
+src/config/ApiSecrets.js
 
 # Expo
 .expo/
