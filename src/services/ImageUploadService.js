@@ -1,4 +1,3 @@
-// src/services/imageUploadService.js
 import * as ImagePicker from 'expo-image-picker';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage } from '../config/FirebaseConfig';
