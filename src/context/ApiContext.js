@@ -51,6 +51,17 @@ export const ApiProvider = ({ children }) => {
         throw error;
       }
     },
+
+    getCard: async (cardId) => {
+      try {
+        // Makes a GET request to /cards/{cardId}
+        const response = await api.get(`/cards/${cardId}`);
+        return response.data;
+      } catch (error) {
+        console.error(`Error fetching card ${cardId}:`, error);
+        throw error;
+      }
+    },
     
     createCard: async (cardData) => {
       try {
