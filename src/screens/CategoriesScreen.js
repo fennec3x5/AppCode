@@ -38,66 +38,66 @@ export default function CategoriesScreen({ navigation }) {
   }, []);
 
   const loadCustomCategories = async () => {
-  try {
-    // Load saved custom categories from AsyncStorage
-    const stored = await AsyncStorage.getItem(CUSTOM_CATEGORIES_KEY);
-    const savedCustomCategories = stored ? JSON.parse(stored) : [];
-    
-    // Load all cards to find categories that might not be in storage
-    const allCards = await api.getCards();
-    const categoriesFromCards = new Set();
-    
-    // Extract all unique category names from cards
-    allCards.forEach(card => {
-      if (card.bonuses && Array.isArray(card.bonuses)) {
-        card.bonuses.forEach(bonus => {
-          if (bonus.categoryName) {
-            categoriesFromCards.add(bonus.categoryName);
-          }
-        });
-      }
-    });
-    
-    // Find categories that exist in cards but not in DEFAULT_CATEGORIES or saved custom categories
-    const allExistingCategories = [...DEFAULT_CATEGORIES, ...savedCustomCategories];
-    const existingCategoryNames = allExistingCategories.map(cat => cat.name.toLowerCase());
-    
-    const newCustomCategories = [];
-    categoriesFromCards.forEach(categoryName => {
-      if (!existingCategoryNames.includes(categoryName.toLowerCase())) {
-        // This is a category that was created on a card but not saved to custom categories
-        newCustomCategories.push({
-          id: `custom_${categoryName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`,
-          name: categoryName,
-          icon: 'category',
-          color: '#666666',
-          isCustom: true,
-        });
-      }
-    });
-    
-    // Merge saved custom categories with newly discovered ones
-    const allCustomCategories = [...savedCustomCategories, ...newCustomCategories];
-    
-    // Save the updated list back to storage if we found new categories
-    if (newCustomCategories.length > 0) {
-      await AsyncStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(allCustomCategories));
-    }
-    
-    setCustomCategories(allCustomCategories);
-  } catch (error) {
-    console.error('Error loading custom categories:', error);
-    // If loading from API fails, at least load from storage
     try {
+      // Load saved custom categories from AsyncStorage
       const stored = await AsyncStorage.getItem(CUSTOM_CATEGORIES_KEY);
-      if (stored) {
-        setCustomCategories(JSON.parse(stored));
+      const savedCustomCategories = stored ? JSON.parse(stored) : [];
+      
+      // Load all cards to find categories that might not be in storage
+      const allCards = await api.getCards();
+      const categoriesFromCards = new Set();
+      
+      // Extract all unique category names from cards
+      allCards.forEach(card => {
+        if (card.bonuses && Array.isArray(card.bonuses)) {
+          card.bonuses.forEach(bonus => {
+            if (bonus.categoryName) {
+              categoriesFromCards.add(bonus.categoryName);
+            }
+          });
+        }
+      });
+      
+      // Find categories that exist in cards but not in DEFAULT_CATEGORIES or saved custom categories
+      const allExistingCategories = [...DEFAULT_CATEGORIES, ...savedCustomCategories];
+      const existingCategoryNames = allExistingCategories.map(cat => cat.name.toLowerCase());
+      
+      const newCustomCategories = [];
+      categoriesFromCards.forEach(categoryName => {
+        if (!existingCategoryNames.includes(categoryName.toLowerCase())) {
+          // This is a category that was created on a card but not saved to custom categories
+          newCustomCategories.push({
+            id: `custom_${categoryName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`,
+            name: categoryName,
+            icon: 'category',
+            color: '#666666',
+            isCustom: true,
+          });
+        }
+      });
+      
+      // Merge saved custom categories with newly discovered ones
+      const allCustomCategories = [...savedCustomCategories, ...newCustomCategories];
+      
+      // Save the updated list back to storage if we found new categories
+      if (newCustomCategories.length > 0) {
+        await AsyncStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(allCustomCategories));
       }
-    } catch (storageError) {
-      console.error('Error loading from storage:', storageError);
+      
+      setCustomCategories(allCustomCategories);
+    } catch (error) {
+      console.error('Error loading custom categories:', error);
+      // If loading from API fails, at least load from storage
+      try {
+        const stored = await AsyncStorage.getItem(CUSTOM_CATEGORIES_KEY);
+        if (stored) {
+          setCustomCategories(JSON.parse(stored));
+        }
+      } catch (storageError) {
+        console.error('Error loading from storage:', storageError);
+      }
     }
-  }
-};
+  };
 
   const loadFavorites = async () => {
     try {
@@ -319,36 +319,14 @@ export default function CategoriesScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.headerSection}>
-      <View style={styles.headerGradient}>
-        <Icon name="category" size={40} color="#FFF" />
-        <Text style={styles.headerTitle}>Categories</Text>
-        <Text style={styles.headerSubtitle}>
-          Manage your bonus categories and favorites
+      {/* Streamlined header */}
+      <View style={styles.header}>
+        <Text style={styles.headerInfo}>
+          Tap the star to favorite • Long press custom categories to delete
         </Text>
       </View>
-    </View>
 
-    {/* Update searchContainer style */}
-    <View style={styles.searchContainer}>
-      <Icon name="search" size={20} color="#999" style={styles.searchIcon} />
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search categories..."
-        placeholderTextColor="#999"
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        autoCorrect={false}
-      />
-      {searchQuery.length > 0 && (
-        <TouchableOpacity
-          onPress={() => setSearchQuery('')}
-          style={styles.clearButton}
-        >
-          <Icon name="close" size={18} color="#999" />
-        </TouchableOpacity>
-      )}
-    </View>
+      {/* Single search container */}
       <View style={styles.searchContainer}>
         <Icon name="search" size={20} color="#999" style={styles.searchIcon} />
         <TextInput
@@ -390,13 +368,6 @@ export default function CategoriesScreen({ navigation }) {
           
           return isLastFavorite ? renderSeparator() : null;
         }}
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <Text style={styles.headerText}>
-              Manage your bonus categories here. Tap the star to favorite, long press custom categories to delete.
-            </Text>
-          </View>
-        }
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyText}>No categories found</Text>
@@ -520,37 +491,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  headerSection: {
-    overflow: 'hidden',
+  header: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
   },
-  headerGradient: {
-    backgroundColor: colors.primary,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.xxl,
-    alignItems: 'center',
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
-    ...shadows.lg,
-  },
-  headerTitle: {
-    ...typography.h2,
-    color: colors.surface,
-    marginTop: spacing.md,
-    marginBottom: spacing.xs,
-  },
-  headerSubtitle: {
-    ...typography.body1,
-    color: colors.surface,
-    opacity: 0.9,
+  headerInfo: {
+    ...typography.caption,
+    color: colors.textSecondary,
     textAlign: 'center',
-    paddingHorizontal: spacing.xl,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
     marginHorizontal: spacing.md,
-    marginTop: spacing.md, // Changed from negative margin to positive
+    marginTop: spacing.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.lg,
@@ -597,28 +555,25 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   categoryIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
   },
-  categoryContent: {
-    flex: 1,
-  },
   categoryName: {
+    flex: 1,
     ...typography.body1,
     color: colors.text,
     fontWeight: '600',
-    marginBottom: spacing.xs,
   },
   customBadge: {
     backgroundColor: colors.primaryBackground,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     borderRadius: borderRadius.sm,
-    alignSelf: 'flex-start',
+    marginRight: spacing.sm,
   },
   customBadgeText: {
     ...typography.caption,
@@ -630,8 +585,6 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
   },
   separator: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     backgroundColor: colors.background,
@@ -639,7 +592,6 @@ const styles = StyleSheet.create({
   separatorText: {
     ...typography.caption,
     color: colors.textSecondary,
-    marginLeft: spacing.sm,
     fontWeight: '600',
     letterSpacing: 0.5,
   },
@@ -651,20 +603,11 @@ const styles = StyleSheet.create({
   emptyText: {
     ...typography.h4,
     color: colors.textSecondary,
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
   },
-  emptySubtext: {
-    ...typography.body1,
-    color: colors.textLight,
-    textAlign: 'center',
-  },
-  fabContainer: {
+  fab: {
     position: 'absolute',
     right: spacing.md,
     bottom: spacing.lg,
-  },
-  fab: {
     width: 56,
     height: 56,
     borderRadius: 28,
@@ -677,10 +620,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: colors.surface,
@@ -700,9 +639,6 @@ const styles = StyleSheet.create({
   modalTitle: {
     ...typography.h3,
     color: colors.text,
-  },
-  modalCloseButton: {
-    padding: spacing.xs,
   },
   inputGroup: {
     marginBottom: spacing.lg,
