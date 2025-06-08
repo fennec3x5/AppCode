@@ -1,268 +1,191 @@
+// src/services/PushNotificationService.js
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFirestore, doc, setDoc } from 'firebase/firestore';
-import app from '../config/FirebaseConfig';
+import app, { EXPO_PROJECT_ID } from '../config/FirebaseConfig'; // Assuming projectId is moved to config
+import { v4 as uuidv4 } from 'uuid';
 
 const db = getFirestore(app);
 const NOTIFICATION_TOKEN_KEY = '@notification_token';
-const EXPO_GO_LIMITATION_KEY = '@expo_go_limitation_acknowledged';
+const DEVICE_ID_KEY = '@device_id'; // Key for our stable anonymous ID
 
-// Configure notification handler
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,  // Show banner when app is in foreground
-    shouldShowList: true,    // Show in notification list
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+// --- Internal Helper Functions ---
+
+// 1. Get a stable, anonymous device ID
+const getDeviceId = async () => {
+  let deviceId = await AsyncStorage.getItem(DEVICE_ID_KEY);
+  if (!deviceId) {
+    deviceId = uuidv4();
+    await AsyncStorage.setItem(DEVICE_ID_KEY, deviceId);
+  }
+  return deviceId;
+};
+
+// 2. Handle permission requests
+const requestPermissions = async () => {
+  if (!Device.isDevice) {
+    console.warn('Push notifications are only available on physical devices.');
+    return false;
+  }
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
+
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+
+  if (finalStatus !== 'granted') {
+    Alert.alert('Permission Required', 'Push notifications have been disabled. You can enable them in your device settings.');
+    return false;
+  }
+  return true;
+};
+
+// 3. Configure Android notification channel
+const configureAndroidChannel = async () => {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+    });
+  }
+};
+
+// 4. Get the actual push token (for real builds)
+const getRealPushToken = async () => {
+  try {
+    const token = (await Notifications.getExpoPushTokenAsync({
+      projectId: EXPO_PROJECT_ID,
+    })).data;
+    console.log('Push notification token:', token);
+    return token;
+  } catch (error) {
+    console.error('Error getting real push token:', error);
+    Alert.alert('Token Error', 'Could not retrieve a push token for this device.');
+    return null;
+  }
+};
+
+// 5. Get a mock token for Expo Go
+const getMockPushToken = () => {
+  console.log('Running in Expo Go - using a mock token.');
+  return `ExpoGo-${Device.osName}-${Date.now()}`;
+};
+
+
+// --- Public Service Object ---
 
 export const PushNotificationService = {
-  // Check if we're in Expo Go
-  isExpoGo: () => {
-    return Constants.appOwnership === 'expo';
+  initialize: () => {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+      }),
+    });
   },
 
-  // Show warning about Expo Go limitations
-  showExpoGoWarning: async () => {
-    const hasShownWarning = await AsyncStorage.getItem(EXPO_GO_LIMITATION_KEY);
-    
-    if (!hasShownWarning && PushNotificationService.isExpoGo()) {
-      Alert.alert(
-        'Push Notifications Limited',
-        'Push notifications are limited in Expo Go. For full functionality:\n\n' +
-        '1. Local notifications (reminders) will work\n' +
-        '2. Remote push notifications require a development build\n\n' +
-        'You can still use the app normally!',
-        [
-          {
-            text: 'Learn More',
-            onPress: () => {
-              // Open documentation
-              console.log('Open docs');
-            },
-          },
-          {
-            text: 'OK',
-            onPress: async () => {
-              await AsyncStorage.setItem(EXPO_GO_LIMITATION_KEY, 'true');
-            },
-          },
-        ]
-      );
-    }
-  },
+  isExpoGo: () => Constants.appOwnership === 'expo',
 
-  // Register for push notifications
-  registerForPushNotifications: async () => {
+  register: async () => {
     try {
-      // Show warning if in Expo Go
-      await PushNotificationService.showExpoGoWarning();
+      const permissionsGranted = await requestPermissions();
+      if (!permissionsGranted) return null;
 
-      if (!Device.isDevice) {
-        console.log('Push notifications only work on physical devices');
-        return null;
-      }
+      await configureAndroidChannel();
 
-      // Check existing permissions
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
+      const token = PushNotificationService.isExpoGo()
+        ? getMockPushToken()
+        : await getRealPushToken();
+      
+      if (!token) return null;
 
-      // Request permissions if not granted
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-
-      if (finalStatus !== 'granted') {
-        console.log('Failed to get push token for push notification!');
-        return null;
-      }
-
-      // Configure Android channel
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', {
-          name: 'default',
-          importance: Notifications.AndroidImportance.MAX,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#FF231F7C',
-        });
-      }
-
-      // For Expo Go, we can't get a real push token
-      // but we can still use local notifications
-      if (PushNotificationService.isExpoGo()) {
-        console.log('Running in Expo Go - using local notifications only');
-        
-        // Store a mock token for development
-        const mockToken = `ExpoGo-${Device.deviceName || 'device'}-${Date.now()}`;
-        await AsyncStorage.setItem(NOTIFICATION_TOKEN_KEY, mockToken);
-        
-        // You could still save this to Firestore for testing
-        await PushNotificationService.saveTokenToFirestore(mockToken, true);
-        
-        return mockToken;
-      }
-
-      // Get the real token (only works in development/production builds)
-      try {
-        // Your specific project ID
-        const projectId = 'e5e984e4-7d5f-40ee-982e-0d02f45ded63';
-        
-        const token = (await Notifications.getExpoPushTokenAsync({
-          projectId: projectId,
-        })).data;
-        
-        console.log('Push notification token:', token);
-
-        // Store token locally
-        await AsyncStorage.setItem(NOTIFICATION_TOKEN_KEY, token);
-
-        // Store token in Firestore
-        await PushNotificationService.saveTokenToFirestore(token, false);
-
-        return token;
-      } catch (error) {
-        console.error('Error getting push token:', error);
-        return null;
-      }
+      await AsyncStorage.setItem(NOTIFICATION_TOKEN_KEY, token);
+      await PushNotificationService.saveTokenToFirestore(token);
+      
+      return token;
     } catch (error) {
-      console.error('Error registering for push notifications:', error);
+      console.error('Error during push notification registration:', error);
       return null;
     }
   },
 
-  // Save token to Firestore
-  saveTokenToFirestore: async (token, isExpoGo = false) => {
+  saveTokenToFirestore: async (token) => {
     try {
-      // For now, we'll use the device ID as the user identifier
-      const deviceId = Device.deviceName || 'anonymous';
-      
+      const deviceId = await getDeviceId();
       await setDoc(doc(db, 'pushTokens', deviceId), {
         token,
         platform: Platform.OS,
-        deviceName: Device.deviceName,
-        isExpoGo,
+        osVersion: Device.osVersion,
+        isExpoGo: PushNotificationService.isExpoGo(),
         lastUpdated: new Date().toISOString(),
       });
-      
-      console.log('Token saved to Firestore');
+      console.log('Token saved to Firestore for device:', deviceId);
     } catch (error) {
       console.error('Error saving token to Firestore:', error);
     }
   },
 
-  // Schedule local notification (works in Expo Go)
-  scheduleLocalNotification: async (title, body, seconds = 5) => {
+  scheduleLocalNotification: async ({ title, body, data, seconds = 1 }) => {
     try {
       const id = await Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body,
-          data: { type: 'bonus-expiring' },
-        },
+        content: { title, body, data },
         trigger: { seconds },
       });
-      console.log('Scheduled notification:', id);
+      console.log('Scheduled local notification:', id);
       return id;
     } catch (error) {
-      console.error('Error scheduling notification:', error);
+      console.error('Error scheduling local notification:', error);
     }
   },
 
-  // Schedule daily check for expiring bonuses (local notifications)
-  scheduleDailyExpiryCheck: async () => {
-    try {
-      // Cancel any existing daily check
-      await Notifications.cancelAllScheduledNotificationsAsync();
-
-      // Schedule a daily trigger at 9 AM
-      const trigger = {
-        hour: 9,
-        minute: 0,
-        repeats: true,
-      };
-
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'Check Your Expiring Bonuses',
-          body: 'Open the app to see which bonus categories are expiring soon!',
-          data: { type: 'daily-check' },
-        },
-        trigger,
-      });
-
-      console.log('Daily notification check scheduled');
-    } catch (error) {
-      console.error('Error scheduling daily check:', error);
-    }
-  },
-
-  // Get stored token
-  getStoredToken: async () => {
-    try {
-      return await AsyncStorage.getItem(NOTIFICATION_TOKEN_KEY);
-    } catch (error) {
-      console.error('Error getting stored token:', error);
-      return null;
-    }
-  },
-
-  // Check for expiring bonuses locally (for Expo Go)
   checkExpiringBonusesLocally: async (cards) => {
+    if (!Array.isArray(cards)) return 0;
+    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
-    const notifications = [];
-    
-    for (const card of cards) {
-      if (card.bonuses && Array.isArray(card.bonuses)) {
-        for (const bonus of card.bonuses) {
-          if (bonus.endDate) {
-            const endDate = new Date(bonus.endDate);
-            endDate.setHours(0, 0, 0, 0);
-            
-            // Check if bonus expires today
-            if (endDate.getTime() === today.getTime()) {
-              notifications.push({
-                title: '💳 Bonus Expiring Today!',
-                body: `${card.cardName}: ${bonus.rewardRate}${bonus.rewardType === 'percentage' ? '%' : 'x'} on ${bonus.categoryName}`,
-                data: {
-                  cardId: card.id,
-                  cardName: card.cardName,
-                  categoryName: bonus.categoryName,
-                }
-              });
-            }
-            // Check if bonus expires tomorrow
-            else if (endDate.getTime() === today.getTime() + 86400000) {
-              notifications.push({
-                title: '⏰ Bonus Expiring Tomorrow',
-                body: `${card.cardName}: ${bonus.rewardRate}${bonus.rewardType === 'percentage' ? '%' : 'x'} on ${bonus.categoryName}`,
-                data: {
-                  cardId: card.id,
-                  cardName: card.cardName,
-                  categoryName: bonus.categoryName,
-                }
-              });
-            }
-          }
+
+    const expiringBonuses = [];
+
+    cards.forEach(card => {
+      card.bonuses?.forEach(bonus => {
+        if (!bonus.endDate) return;
+
+        const endDate = new Date(bonus.endDate);
+        const daysUntil = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
+
+        if (daysUntil === 1) { // Expires tomorrow
+          expiringBonuses.push({
+            title: '⏰ Bonus Expiring Tomorrow',
+            body: `${card.cardName}: ${bonus.rewardRate}${bonus.rewardType === 'percentage' ? '%' : 'x'} on ${bonus.categoryName}`,
+            data: { cardId: card.id },
+          });
+        } else if (daysUntil === 0) { // Expires today
+          expiringBonuses.push({
+            title: '💳 Bonus Expiring Today!',
+            body: `${card.cardName}: ${bonus.rewardRate}${bonus.rewardType === 'percentage' ? '%' : 'x'} on ${bonus.categoryName}`,
+            data: { cardId: card.id },
+          });
         }
-      }
+      });
+    });
+    
+    // Schedule all found notifications, staggered by 2 seconds
+    for (let i = 0; i < expiringBonuses.length; i++) {
+      await PushNotificationService.scheduleLocalNotification({
+        ...expiringBonuses[i],
+        seconds: 5 + i * 2,
+      });
     }
     
-    // Schedule local notifications
-    for (let i = 0; i < notifications.length; i++) {
-      await PushNotificationService.scheduleLocalNotification(
-        notifications[i].title,
-        notifications[i].body,
-        5 + (i * 2) // Stagger notifications by 2 seconds
-      );
-    }
-    
-    return notifications.length;
+    return expiringBonuses.length;
   },
 };
