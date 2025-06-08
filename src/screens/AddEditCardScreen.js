@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,10 +11,17 @@ import {
   Platform,
   Image,
   ActivityIndicator,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+// Removed LinearGradient import - using standard views instead
+import * as Haptics from 'expo-haptics';
 import { useApi } from '../context/ApiContext';
 import { pickImage, uploadCardImage, deleteCardImage } from '../services/ImageUploadService';
+import { colors, typography, spacing, borderRadius, shadows } from '../config/Theme';
+
+const { width } = Dimensions.get('window');
 
 export default function AddEditCardScreen({ navigation, route }) {
   const card = route.params?.card;
@@ -33,8 +40,87 @@ export default function AddEditCardScreen({ navigation, route }) {
   
   const api = useApi();
 
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const imageScale = useRef(new Animated.Value(0.9)).current;
+  const formScale = useRef(new Animated.Value(0.95)).current;
+  const errorShake = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    animateScreenEntry();
+  }, []);
+
+  const animateScreenEntry = () => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(imageScale, {
+        toValue: 1,
+        tension: 40,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+      Animated.spring(formScale, {
+        toValue: 1,
+        tension: 40,
+        friction: 8,
+        useNativeDriver: true,
+        delay: 100,
+      }),
+    ]).start();
+  };
+
+  const shakeError = () => {
+    Animated.sequence([
+      Animated.timing(errorShake, {
+        toValue: 10,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(errorShake, {
+        toValue: -10,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(errorShake, {
+        toValue: 10,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(errorShake, {
+        toValue: 0,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
   const handlePickImage = async () => {
     if (uploadingImage) return;
+
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    Animated.sequence([
+      Animated.timing(imageScale, {
+        toValue: 0.95,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(imageScale, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
 
     const localUri = await pickImage();
     if (localUri) {
@@ -45,8 +131,23 @@ export default function AddEditCardScreen({ navigation, route }) {
 
   const handleRemoveImage = async () => {
     if (uploadingImage) return;
-    setImageUri(null);
-    setImageChanged(true);
+    
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    Animated.timing(imageScale, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setImageUri(null);
+      setImageChanged(true);
+      Animated.spring(imageScale, {
+        toValue: 1,
+        tension: 40,
+        friction: 8,
+        useNativeDriver: true,
+      }).start();
+    });
   };
 
   const validateForm = () => {
@@ -62,6 +163,12 @@ export default function AddEditCardScreen({ navigation, route }) {
     }
     
     setErrors(newErrors);
+    
+    if (Object.keys(newErrors).length > 0) {
+      shakeError();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+    
     return Object.keys(newErrors).length === 0;
   };
 
@@ -70,6 +177,7 @@ export default function AddEditCardScreen({ navigation, route }) {
       return;
     }
 
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
     let finalImageUrl = card?.imageUrl || null;
 
@@ -116,13 +224,16 @@ export default function AddEditCardScreen({ navigation, route }) {
 
       if (isEdit) {
         await api.updateCard(card.id, cardData);
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         Alert.alert('Success', 'Card updated successfully');
       } else {
         const newCard = await api.createCard(cardData);
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         Alert.alert('Success', 'Card added successfully');
       }
       navigation.goBack();
     } catch (error) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
         'Error',
         `Failed to ${isEdit ? 'update' : 'create'} card. Please try again.`
@@ -148,43 +259,87 @@ export default function AddEditCardScreen({ navigation, route }) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView 
+      <Animated.ScrollView 
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        style={{
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+        }}
       >
-        <View style={styles.form}>
+        {/* Header */}
+        <View style={styles.headerGradient}>
+          <View style={styles.headerContent}>
+            <Icon name="credit-card" size={40} color="#FFF" />
+            <Text style={styles.headerTitle}>
+              {isEdit ? 'Edit Card' : 'Add New Card'}
+            </Text>
+            <Text style={styles.headerSubtitle}>
+              {isEdit ? 'Update your card details' : 'Track rewards for a new card'}
+            </Text>
+          </View>
+        </View>
+
+        <Animated.View 
+          style={[
+            styles.form,
+            {
+              transform: [
+                { scale: formScale },
+                { translateX: errorShake },
+              ],
+            },
+          ]}
+        >
           {/* Card Image */}
           <View style={styles.imageSection}>
             <Text style={styles.label}>Card Image</Text>
-            <TouchableOpacity
-              style={styles.imageContainer}
-              onPress={handlePickImage}
-              activeOpacity={0.7}
+            <Text style={styles.helperText}>Add a photo to easily identify your card</Text>
+            
+            <Animated.View
+              style={[
+                styles.imageContainer,
+                {
+                  transform: [{ scale: imageScale }],
+                },
+              ]}
             >
-              {imageUri ? (
-                <Image source={{ uri: imageUri }} style={styles.cardImage} />
-              ) : (
-                <View style={styles.imagePlaceholder}>
-                  <Icon name="credit-card" size={48} color="#ccc" />
-                  <Text style={styles.imagePlaceholderText}>Tap to add card image</Text>
-                </View>
-              )}
-              {uploadingImage && (
-                <View style={styles.uploadingOverlay}>
-                  <ActivityIndicator size="large" color="#fff" />
-                </View>
-              )}
-            </TouchableOpacity>
-            {imageUri && (
               <TouchableOpacity
-                style={styles.removeImageButton}
-                onPress={handleRemoveImage}
-                activeOpacity={0.7}
+                onPress={handlePickImage}
+                activeOpacity={0.9}
+                disabled={uploadingImage}
               >
-                <Icon name="close" size={16} color="#f44336" />
-                <Text style={styles.removeImageText}>Remove image</Text>
+                {imageUri ? (
+                  <Image source={{ uri: imageUri }} style={styles.cardImage} />
+                ) : (
+                  <View style={styles.imagePlaceholder}>
+                    <View style={styles.imagePlaceholderContent}>
+                      <View style={styles.uploadIconContainer}>
+                        <Icon name="add-a-photo" size={32} color="#1976D2" />
+                      </View>
+                      <Text style={styles.imagePlaceholderText}>Tap to add photo</Text>
+                    </View>
+                  </View>
+                )}
+                {uploadingImage && (
+                  <View style={styles.uploadingOverlay}>
+                    <ActivityIndicator size="large" color="#fff" />
+                    <Text style={styles.uploadingText}>Uploading...</Text>
+                  </View>
+                )}
               </TouchableOpacity>
-            )}
+              
+              {imageUri && (
+                <TouchableOpacity
+                  style={styles.removeImageButton}
+                  onPress={handleRemoveImage}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="close" size={20} color="#FFF" />
+                </TouchableOpacity>
+              )}
+            </Animated.View>
           </View>
 
           {/* Card Name Input */}
@@ -192,7 +347,8 @@ export default function AddEditCardScreen({ navigation, route }) {
             <Text style={styles.label}>
               Card Name <Text style={styles.required}>*</Text>
             </Text>
-            <View style={[styles.inputContainer, errors.cardName && styles.inputError]}>
+            <View style={[styles.inputWrapper, errors.cardName && styles.inputError]}>
+              <Icon name="credit-card" size={20} color="#9E9E9E" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 value={cardName}
@@ -203,26 +359,30 @@ export default function AddEditCardScreen({ navigation, route }) {
                   }
                 }}
                 placeholder="e.g., Chase Sapphire Preferred"
-                placeholderTextColor="#999"
+                placeholderTextColor="#B0BEC5"
                 autoFocus={!isEdit}
                 maxLength={50}
               />
             </View>
             {errors.cardName && (
-              <Text style={styles.errorText}>{errors.cardName}</Text>
+              <View style={styles.errorContainer}>
+                <Icon name="error-outline" size={14} color="#F44336" />
+                <Text style={styles.errorText}>{errors.cardName}</Text>
+              </View>
             )}
           </View>
 
           {/* Issuer Input */}
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Issuer</Text>
-            <View style={styles.inputContainer}>
+            <View style={styles.inputWrapper}>
+              <Icon name="business" size={20} color="#9E9E9E" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 value={issuer}
                 onChangeText={setIssuer}
                 placeholder="e.g., Chase"
-                placeholderTextColor="#999"
+                placeholderTextColor="#B0BEC5"
                 maxLength={30}
               />
             </View>
@@ -231,10 +391,11 @@ export default function AddEditCardScreen({ navigation, route }) {
 
           {/* Default Reward Rate Input */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Default Reward Rate (%)</Text>
-            <View style={[styles.inputContainer, errors.defaultRewardRate && styles.inputError]}>
+            <Text style={styles.label}>Default Reward Rate</Text>
+            <View style={[styles.inputWrapper, styles.rateInputWrapper, errors.defaultRewardRate && styles.inputError]}>
+              <Icon name="percent" size={20} color="#9E9E9E" style={styles.inputIcon} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, styles.rateInput]}
                 value={defaultRewardRate}
                 onChangeText={(text) => {
                   setDefaultRewardRate(text);
@@ -243,14 +404,19 @@ export default function AddEditCardScreen({ navigation, route }) {
                   }
                 }}
                 placeholder="1"
-                placeholderTextColor="#999"
+                placeholderTextColor="#B0BEC5"
                 keyboardType="decimal-pad"
                 maxLength={5}
               />
-              <Text style={styles.inputSuffix}>%</Text>
+              <View style={styles.percentBadge}>
+                <Text style={styles.percentText}>%</Text>
+              </View>
             </View>
             {errors.defaultRewardRate ? (
-              <Text style={styles.errorText}>{errors.defaultRewardRate}</Text>
+              <View style={styles.errorContainer}>
+                <Icon name="error-outline" size={14} color="#F44336" />
+                <Text style={styles.errorText}>{errors.defaultRewardRate}</Text>
+              </View>
             ) : (
               <Text style={styles.helperText}>
                 Cashback rate for purchases without specific bonuses
@@ -258,28 +424,47 @@ export default function AddEditCardScreen({ navigation, route }) {
             )}
           </View>
 
+          {/* Info Box */}
+          <View style={styles.infoBox}>
+            <Icon name="info" size={20} color="#1976D2" />
+            <Text style={styles.infoText}>
+              After creating your card, you can add bonus categories to maximize your rewards!
+            </Text>
+          </View>
+
           {/* Action Buttons */}
           <View style={styles.buttons}>
             <TouchableOpacity
               style={[styles.button, styles.cancelButton]}
-              onPress={() => navigation.goBack()}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                navigation.goBack();
+              }}
               activeOpacity={0.7}
             >
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
+            
             <TouchableOpacity
-              style={[styles.button, styles.saveButton]}
+              style={[styles.button, styles.saveButton, (loading || uploadingImage) && styles.saveButtonDisabled]}
               onPress={handleSave}
               disabled={loading || uploadingImage}
-              activeOpacity={0.7}
+              activeOpacity={0.8}
             >
-              <Text style={styles.saveButtonText}>
-                {loading || uploadingImage ? 'Saving...' : 'Save'}
-              </Text>
+              {loading || uploadingImage ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <View style={styles.saveButtonContent}>
+                  <Icon name="save" size={20} color="#FFF" style={styles.buttonIcon} />
+                  <Text style={styles.saveButtonText}>
+                    {isEdit ? 'Update Card' : 'Add Card'}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
-        </View>
-      </ScrollView>
+        </Animated.View>
+      </Animated.ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -287,147 +472,241 @@ export default function AddEditCardScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 20,
+    paddingBottom: spacing.xl,
+  },
+  headerGradient: {
+    backgroundColor: colors.primary,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.xxl,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    ...shadows.lg,
+  },
+  headerContent: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  headerTitle: {
+    ...typography.h2,
+    color: colors.surface,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  headerSubtitle: {
+    ...typography.body1,
+    color: colors.surface,
+    opacity: 0.9,
   },
   form: {
-    backgroundColor: '#fff',
-    margin: 16,
-    padding: 20,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  iconContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
+    backgroundColor: colors.surface,
+    marginHorizontal: spacing.md,
+    marginTop: -spacing.lg,
+    padding: spacing.lg,
+    borderRadius: borderRadius.xl,
+    ...shadows.md,
   },
   imageSection: {
-    marginBottom: 24,
+    marginBottom: spacing.xl,
   },
   imageContainer: {
-    alignItems: 'center',
-    marginTop: 8,
+    marginTop: spacing.md,
     position: 'relative',
+    alignItems: 'center',
   },
   cardImage: {
-    width: '100%',
-    height: 180,
-    borderRadius: 12,
-    backgroundColor: '#f8f8f8',
+    width: width - (spacing.md * 2) - (spacing.lg * 2),
+    height: (width - (spacing.md * 2) - (spacing.lg * 2)) * 0.63,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.background,
   },
   imagePlaceholder: {
-    width: '100%',
-    height: 180,
-    borderRadius: 12,
-    backgroundColor: '#f8f8f8',
+    width: width - (spacing.md * 2) - (spacing.lg * 2),
+    height: (width - (spacing.md * 2) - (spacing.lg * 2)) * 0.63,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.primaryBackground,
     borderWidth: 2,
-    borderColor: '#ddd',
+    borderColor: colors.primary + '30',
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
   },
+  imagePlaceholderContent: {
+    alignItems: 'center',
+  },
+  uploadIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    ...shadows.sm,
+  },
   imagePlaceholderText: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#999',
+    ...typography.body1,
+    color: colors.primary,
+    fontWeight: '600',
   },
   uploadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: borderRadius.lg,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  removeImageButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    padding: 8,
-    alignSelf: 'center'
+  uploadingText: {
+    ...typography.body2,
+    color: colors.surface,
+    marginTop: spacing.sm,
   },
-  removeImageText: {
-    marginLeft: 4,
-    fontSize: 14,
-    color: '#f44336',
+  removeImageButton: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.error,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...shadows.sm,
   },
   inputGroup: {
-    marginBottom: 24,
+    marginBottom: spacing.lg,
   },
   label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
+    ...typography.h5,
+    color: colors.text,
+    marginBottom: spacing.xs,
   },
   required: {
-    color: '#f44336',
+    color: colors.error,
   },
-  inputContainer: {
+  inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#f8f8f8',
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.md,
+    height: 56,
   },
   inputError: {
-    borderColor: '#f44336',
+    borderColor: colors.error,
+    backgroundColor: '#FFF5F5',
+  },
+  inputIcon: {
+    marginRight: spacing.sm,
   },
   input: {
     flex: 1,
-    padding: 12,
-    fontSize: 16,
-    color: '#333',
+    ...typography.body1,
+    color: colors.text,
+    paddingVertical: spacing.sm,
   },
-  inputSuffix: {
-    paddingRight: 12,
-    fontSize: 16,
-    color: '#666',
+  rateInputWrapper: {
+    paddingRight: 0,
+  },
+  rateInput: {
+    paddingRight: spacing.sm,
+  },
+  percentBadge: {
+    backgroundColor: colors.primaryBackground,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+    marginRight: spacing.sm,
+    height: 36,
+    justifyContent: 'center',
+  },
+  percentText: {
+    ...typography.h5,
+    color: colors.primary,
   },
   helperText: {
-    fontSize: 13,
-    color: '#666',
-    marginTop: 4,
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.xs,
   },
   errorText: {
-    fontSize: 13,
-    color: '#f44336',
-    marginTop: 4,
+    ...typography.caption,
+    color: colors.error,
+    marginLeft: spacing.xs,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    backgroundColor: colors.primaryBackground,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xl,
+  },
+  infoText: {
+    ...typography.body2,
+    color: colors.primary,
+    marginLeft: spacing.sm,
+    flex: 1,
+    lineHeight: 20,
   },
   buttons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 32,
+    marginTop: spacing.lg,
   },
   button: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 8,
+    height: 56,
+    borderRadius: borderRadius.lg,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: '#f5f5f5',
-    marginRight: 8,
+    backgroundColor: colors.background,
+    marginRight: spacing.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
   },
   saveButton: {
-    backgroundColor: '#2196F3',
-    marginLeft: 8,
+    marginLeft: spacing.sm,
+    backgroundColor: colors.primary,
+    overflow: 'hidden',
+  },
+  saveButtonDisabled: {
+    backgroundColor: colors.textLight,
+  },
+  saveButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveButtonGradient: {
+    width: '100%',
+    height: '100%',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  buttonIcon: {
+    marginRight: spacing.sm,
   },
   cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: '600',
+    ...typography.button,
+    color: colors.textSecondary,
   },
   saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    ...typography.button,
+    color: colors.surface,
   },
 });

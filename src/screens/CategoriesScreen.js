@@ -14,7 +14,10 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useApi } from '../context/ApiContext';
+import { colors, typography, spacing, borderRadius, shadows } from '../config/Theme';
 import { DEFAULT_CATEGORIES, CUSTOM_CATEGORIES_KEY, FAVORITE_CATEGORIES_KEY } from '../config/categories';
+
 
 export default function CategoriesScreen({ navigation }) {
   const [categories, setCategories] = useState([]);
@@ -26,6 +29,7 @@ export default function CategoriesScreen({ navigation }) {
   const [selectedIcon, setSelectedIcon] = useState('category');
   const [selectedColor, setSelectedColor] = useState('#666666');
   const [editingCategory, setEditingCategory] = useState(null);
+  const api = useApi();
 
   // Load custom categories and favorites from storage
   useEffect(() => {
@@ -34,16 +38,66 @@ export default function CategoriesScreen({ navigation }) {
   }, []);
 
   const loadCustomCategories = async () => {
+  try {
+    // Load saved custom categories from AsyncStorage
+    const stored = await AsyncStorage.getItem(CUSTOM_CATEGORIES_KEY);
+    const savedCustomCategories = stored ? JSON.parse(stored) : [];
+    
+    // Load all cards to find categories that might not be in storage
+    const allCards = await api.getCards();
+    const categoriesFromCards = new Set();
+    
+    // Extract all unique category names from cards
+    allCards.forEach(card => {
+      if (card.bonuses && Array.isArray(card.bonuses)) {
+        card.bonuses.forEach(bonus => {
+          if (bonus.categoryName) {
+            categoriesFromCards.add(bonus.categoryName);
+          }
+        });
+      }
+    });
+    
+    // Find categories that exist in cards but not in DEFAULT_CATEGORIES or saved custom categories
+    const allExistingCategories = [...DEFAULT_CATEGORIES, ...savedCustomCategories];
+    const existingCategoryNames = allExistingCategories.map(cat => cat.name.toLowerCase());
+    
+    const newCustomCategories = [];
+    categoriesFromCards.forEach(categoryName => {
+      if (!existingCategoryNames.includes(categoryName.toLowerCase())) {
+        // This is a category that was created on a card but not saved to custom categories
+        newCustomCategories.push({
+          id: `custom_${categoryName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`,
+          name: categoryName,
+          icon: 'category',
+          color: '#666666',
+          isCustom: true,
+        });
+      }
+    });
+    
+    // Merge saved custom categories with newly discovered ones
+    const allCustomCategories = [...savedCustomCategories, ...newCustomCategories];
+    
+    // Save the updated list back to storage if we found new categories
+    if (newCustomCategories.length > 0) {
+      await AsyncStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(allCustomCategories));
+    }
+    
+    setCustomCategories(allCustomCategories);
+  } catch (error) {
+    console.error('Error loading custom categories:', error);
+    // If loading from API fails, at least load from storage
     try {
       const stored = await AsyncStorage.getItem(CUSTOM_CATEGORIES_KEY);
       if (stored) {
-        const parsed = JSON.parse(stored);
-        setCustomCategories(parsed);
+        setCustomCategories(JSON.parse(stored));
       }
-    } catch (error) {
-      console.error('Error loading custom categories:', error);
+    } catch (storageError) {
+      console.error('Error loading from storage:', storageError);
     }
-  };
+  }
+};
 
   const loadFavorites = async () => {
     try {
@@ -265,6 +319,36 @@ export default function CategoriesScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <View style={styles.headerSection}>
+      <View style={styles.headerGradient}>
+        <Icon name="category" size={40} color="#FFF" />
+        <Text style={styles.headerTitle}>Categories</Text>
+        <Text style={styles.headerSubtitle}>
+          Manage your bonus categories and favorites
+        </Text>
+      </View>
+    </View>
+
+    {/* Update searchContainer style */}
+    <View style={styles.searchContainer}>
+      <Icon name="search" size={20} color="#999" style={styles.searchIcon} />
+      <TextInput
+        style={styles.searchInput}
+        placeholder="Search categories..."
+        placeholderTextColor="#999"
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        autoCorrect={false}
+      />
+      {searchQuery.length > 0 && (
+        <TouchableOpacity
+          onPress={() => setSearchQuery('')}
+          style={styles.clearButton}
+        >
+          <Icon name="close" size={18} color="#999" />
+        </TouchableOpacity>
+      )}
+    </View>
       <View style={styles.searchContainer}>
         <Icon name="search" size={20} color="#999" style={styles.searchIcon} />
         <TextInput
@@ -434,196 +518,232 @@ export default function CategoriesScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
+  },
+  headerSection: {
+    overflow: 'hidden',
+  },
+  headerGradient: {
+    backgroundColor: colors.primary,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.xxl,
+    alignItems: 'center',
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    ...shadows.lg,
+  },
+  headerTitle: {
+    ...typography.h2,
+    color: colors.surface,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  headerSubtitle: {
+    ...typography.body1,
+    color: colors.surface,
+    opacity: 0.9,
+    textAlign: 'center',
+    paddingHorizontal: spacing.xl,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    margin: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    backgroundColor: colors.surface,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.md, // Changed from negative margin to positive
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    ...shadows.sm,
   },
   searchIcon: {
-    marginRight: 8,
+    marginRight: spacing.sm,
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
-    color: '#333',
-    paddingVertical: 4,
+    ...typography.body1,
+    color: colors.text,
+    paddingVertical: spacing.xs,
   },
   clearButton: {
-    padding: 4,
+    padding: spacing.xs,
   },
   favoritesHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-    backgroundColor: '#fff',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
   },
   favoritesHeaderText: {
-    fontSize: 14,
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginLeft: spacing.xs,
     fontWeight: '600',
-    color: '#666',
-    marginLeft: 6,
+    letterSpacing: 0.5,
   },
   listContent: {
-    paddingBottom: 80,
-  },
-  header: {
-    padding: 16,
-    backgroundColor: '#fff',
-    marginBottom: 8,
-  },
-  headerText: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
+    paddingBottom: 100,
+    paddingTop: spacing.sm,
   },
   categoryItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    backgroundColor: colors.surface,
+    marginHorizontal: spacing.md,
+    marginVertical: spacing.xs,
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    ...shadows.sm,
   },
   categoryIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  categoryName: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-  },
-  customBadge: {
-    backgroundColor: '#E3F2FD',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-    marginRight: 12,
-  },
-  customBadgeText: {
-    fontSize: 12,
-    color: '#2196F3',
-    fontWeight: '500',
-  },
-  favoriteButton: {
-    padding: 4,
-  },
-  separator: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    backgroundColor: '#f8f8f8',
-  },
-  separatorText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
-  },
-  emptyState: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#999',
-  },
-  fab: {
-    position: 'absolute',
-    right: 16,
-    bottom: 16,
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#2196F3',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    marginRight: spacing.md,
+  },
+  categoryContent: {
+    flex: 1,
+  },
+  categoryName: {
+    ...typography.body1,
+    color: colors.text,
+    fontWeight: '600',
+    marginBottom: spacing.xs,
+  },
+  customBadge: {
+    backgroundColor: colors.primaryBackground,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+    alignSelf: 'flex-start',
+  },
+  customBadgeText: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  favoriteButton: {
+    padding: spacing.sm,
+  },
+  separator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.background,
+  },
+  separatorText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginLeft: spacing.sm,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  emptyState: {
+    alignItems: 'center',
+    marginTop: spacing.xxl * 2,
+    paddingHorizontal: spacing.xl,
+  },
+  emptyText: {
+    ...typography.h4,
+    color: colors.textSecondary,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  emptySubtext: {
+    ...typography.body1,
+    color: colors.textLight,
+    textAlign: 'center',
+  },
+  fabContainer: {
+    position: 'absolute',
+    right: spacing.md,
+    bottom: spacing.lg,
+  },
+  fab: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...shadows.lg,
   },
   modalContainer: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: borderRadius.xxl,
+    borderTopRightRadius: borderRadius.xxl,
+    padding: spacing.xl,
+    paddingBottom: Platform.OS === 'ios' ? spacing.xxl : spacing.xl,
     maxHeight: '90%',
+    ...shadows.lg,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: spacing.xl,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
+    ...typography.h3,
+    color: colors.text,
+  },
+  modalCloseButton: {
+    padding: spacing.xs,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: spacing.lg,
   },
   label: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-    marginBottom: 8,
+    ...typography.body1,
+    color: colors.text,
+    fontWeight: '600',
+    marginBottom: spacing.sm,
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#f8f8f8',
+    ...typography.body1,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    backgroundColor: colors.background,
+    color: colors.text,
   },
   iconList: {
-    paddingVertical: 8,
+    paddingVertical: spacing.sm,
   },
   iconOption: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#f8f8f8',
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
+    marginRight: spacing.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
   },
   iconOptionSelected: {
-    backgroundColor: '#2196F3',
-    borderColor: '#2196F3',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   colorGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    marginHorizontal: -spacing.xs,
   },
   colorOption: {
     width: 48,
@@ -631,40 +751,41 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
-    marginBottom: 8,
+    margin: spacing.xs,
+    ...shadows.sm,
   },
   colorOptionSelected: {
     borderWidth: 3,
-    borderColor: '#fff',
+    borderColor: colors.surface,
   },
   modalButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 20,
+    marginTop: spacing.xl,
   },
   button: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 8,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: '#f5f5f5',
-    marginRight: 8,
+    backgroundColor: colors.background,
+    marginRight: spacing.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
   },
   saveButton: {
-    backgroundColor: '#2196F3',
-    marginLeft: 8,
+    backgroundColor: colors.primary,
+    marginLeft: spacing.sm,
   },
   cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: '600',
+    ...typography.button,
+    color: colors.textSecondary,
   },
   saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    ...typography.button,
+    color: colors.surface,
   },
 });

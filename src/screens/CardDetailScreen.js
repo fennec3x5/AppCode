@@ -445,7 +445,7 @@ export default function CardDetailScreen({ navigation, route }) {
             <Text style={styles.actionText}>Edit Card</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.actionButton, styles.deleteButton]}
+            style={[styles.actionButton, styles.deleteActionButton]}
             onPress={handleDeleteCard}
             activeOpacity={0.7}
           >
@@ -595,7 +595,7 @@ const styles = StyleSheet.create({
     borderColor: '#2196F3',
     backgroundColor: '#fff',
   },
-  deleteButton: {
+  deleteActionButton: {
     borderColor: '#f44336',
   },
   actionText: {
