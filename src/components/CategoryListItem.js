@@ -4,35 +4,16 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors, typography, spacing, borderRadius, shadows } from '../config/Theme';
 
-const CategoryListItem = React.memo(({ category, isFavorite, onToggleFavorite, onEdit, onDelete }) => {
-  // This handler is now only callable for custom categories, but the check is kept for robustness.
+const CategoryListItem = React.memo(({ category, isFavorite, onToggleFavorite, onShowActions }) => {
+  
   const handleMorePress = () => {
+    // We still check here to prevent showing actions for default categories.
     if (!category.isCustom) {
       Alert.alert('Info', 'Default categories cannot be modified.');
       return;
     }
-    
-    Alert.alert(
-      `Manage "${category.name}"`,
-      'What would you like to do?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => handleDeletePress() },
-        { text: 'Edit', onPress: () => onEdit(category) },
-      ],
-      { cancelable: true }
-    );
-  };
-
-  const handleDeletePress = () => {
-    Alert.alert(
-      'Delete Category',
-      `Are you sure you want to delete "${category.name}"? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => onDelete(category.id) }
-      ]
-    )
+    // This is the key change: it calls the parent to handle the action.
+    onShowActions(category);
   };
 
   return (
@@ -52,20 +33,18 @@ const CategoryListItem = React.memo(({ category, isFavorite, onToggleFavorite, o
         />
       </TouchableOpacity>
       
-      {/* Only render the 'more' button if the category is custom */}
       {category.isCustom ? (
         <TouchableOpacity onPress={handleMorePress} style={styles.actionButton}>
           <Icon name="more-vert" size={26} color={colors.textSecondary} />
         </TouchableOpacity>
       ) : (
-        // Render a placeholder to maintain alignment with custom items
         <View style={styles.placeholder} />
       )}
-
     </View>
   );
 });
 
+// --- THIS IS THE MISSING PART ---
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
@@ -103,9 +82,7 @@ const styles = StyleSheet.create({
   actionButton: {
     padding: spacing.sm,
   },
-  // Added a placeholder style
   placeholder: {
-    // Takes up the same space as the button to keep item contents aligned
     width: 26 + (spacing.sm * 2), 
   },
 });

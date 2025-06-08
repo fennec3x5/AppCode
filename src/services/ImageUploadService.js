@@ -1,86 +1,80 @@
+// src/services/ImageUploadService.js
 import * as ImagePicker from 'expo-image-picker';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage } from '../config/FirebaseConfig';
 import { Alert, ActionSheetIOS, Platform } from 'react-native';
 
+// Helper function to get necessary permissions
+const getPermissions = async () => {
+  const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
+  const { status: libraryStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+  if (libraryStatus !== 'granted' || cameraStatus !== 'granted') {
+    Alert.alert(
+      'Permission Required',
+      'We need access to your camera and photo library to add images.'
+    );
+    return false;
+  }
+  return true;
+};
+
 export const pickImage = async () => {
+  const hasPermissions = await getPermissions();
+  if (!hasPermissions) return null;
+
   try {
-    // Request permissions
-    const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
-    const { status: libraryStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
-    if (libraryStatus !== 'granted') {
-      Alert.alert('Permission Denied', 'Sorry, we need camera roll permissions to upload images.');
-      return null;
-    }
-
-    // Show options for image source
-    return new Promise((resolve) => {
-      const options = ['Take Photo', 'Choose from Library', 'Cancel'];
-      const cancelButtonIndex = 2;
-
-      const showPicker = (index) => {
-        if (index === cancelButtonIndex) {
-          resolve(null);
-          return;
-        }
-
-        const pickerOptions = {
-          mediaTypes: ImagePicker.MediaTypeOptions ? ImagePicker.MediaTypeOptions.Images : ['images'],
-          allowsEditing: false,
-          quality: 0.8,
-          base64: false,
-          exif: false,
-        };
-
-        const launchPicker = index === 0 
-          ? (cameraStatus === 'granted' ? ImagePicker.launchCameraAsync : null)
-          : ImagePicker.launchImageLibraryAsync;
-
-        if (!launchPicker) {
-          Alert.alert('Permission Denied', 'Camera permission is required to take photos.');
-          resolve(null);
-          return;
-        }
-
-        launchPicker(pickerOptions).then((result) => {
-          if (!result.canceled && result.assets && result.assets[0]) {
-            resolve(result.assets[0].uri);
-          } else {
-            resolve(null);
-          }
-        }).catch((error) => {
-          console.error('Error picking image:', error);
-          Alert.alert('Error', 'Failed to pick image');
-          resolve(null);
-        });
-      };
-
+    // Show options for image source using a Promise-based wrapper for the ActionSheet
+    const choice = await new Promise((resolve) => {
       if (Platform.OS === 'ios') {
         ActionSheetIOS.showActionSheetWithOptions(
           {
-            options,
-            cancelButtonIndex,
+            options: ['Take Photo', 'Choose from Library', 'Cancel'],
+            cancelButtonIndex: 2,
           },
-          showPicker
+          buttonIndex => resolve(buttonIndex)
         );
       } else {
-        // For Android, use Alert
         Alert.alert(
-          'Select Image',
-          'Choose image source',
+          'Select Image Source', '',
           [
-            { text: 'Take Photo', onPress: () => showPicker(0) },
-            { text: 'Choose from Library', onPress: () => showPicker(1) },
-            { text: 'Cancel', onPress: () => showPicker(2), style: 'cancel' },
+            { text: 'Take Photo', onPress: () => resolve(0) },
+            { text: 'Choose from Library', onPress: () => resolve(1) },
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve(2) },
           ],
-          { cancelable: true }
+          { onDismiss: () => resolve(2) }
         );
       }
     });
+
+    // Handle user's choice
+    if (choice === 2 || choice === undefined) { // 2 is Cancel, undefined if dismissed on Android
+      return null;
+    }
+
+    const pickerOptions = {
+      mediaTypes: ImagePicker.MediaType.Images,
+      allowsEditing: true,
+      aspect: [1.586, 1], // Credit card aspect ratio
+      quality: 0.7,
+    };
+
+    let result;
+    if (choice === 0) { // Take Photo
+      result = await ImagePicker.launchCameraAsync(pickerOptions);
+    } else { // Choose from Library
+      result = await ImagePicker.launchImageLibraryAsync(pickerOptions);
+    }
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      return result.assets[0].uri;
+    }
+
+    return null;
+
   } catch (error) {
-    console.error('Error in pickImage:', error);
-    Alert.alert('Error', 'Failed to pick image');
+    console.error('Error during image picking process:', error);
+    Alert.alert('Error', 'An unexpected error occurred while selecting the image.');
     return null;
   }
 };
@@ -94,60 +88,47 @@ export const uploadCardImage = async (imageUri, cardId) => {
     
     // Convert image to blob
     const response = await fetch(imageUri);
-    if (!response.ok) {
-      throw new Error('Failed to fetch image');
-    }
+    if (!response.ok) throw new Error('Failed to fetch image for upload.');
     
     const blob = await response.blob();
     console.log('Blob created, size:', blob.size);
     
-    // Create storage reference
     const storageRef = ref(storage, filename);
-    
-    // Upload with metadata
-    const metadata = {
-      contentType: 'image/jpeg',
-      customMetadata: {
-        cardId: cardId,
-        uploadedAt: new Date().toISOString(),
-      }
-    };
+    const metadata = { contentType: 'image/jpeg' };
     
     console.log('Uploading to:', filename);
     const snapshot = await uploadBytes(storageRef, blob, metadata);
-    console.log('Upload complete');
     
-    // Get download URL
     const downloadURL = await getDownloadURL(snapshot.ref);
     console.log('Download URL obtained:', downloadURL);
     
     return downloadURL;
   } catch (error) {
     console.error('Error uploading image:', error);
-    throw error;
+    Alert.alert('Upload Failed', 'Could not upload the image. Please check your connection and try again.');
+    throw error; // Re-throw to be caught by the calling function
   }
 };
 
 export const deleteCardImage = async (imageUrl) => {
-  if (!imageUrl) return;
+  if (!imageUrl || !imageUrl.startsWith('https://firebasestorage.googleapis.com')) {
+    console.log("Not a Firebase Storage URL, skipping delete.");
+    return;
+  }
 
   try {
-    // Extract the file path from the URL
-    const baseUrl = 'https://firebasestorage.googleapis.com/v0/b/';
-    const startIndex = imageUrl.indexOf(baseUrl);
-    
-    if (startIndex === -1) return;
-
-    const pathStart = imageUrl.indexOf('/o/') + 3;
-    const pathEnd = imageUrl.indexOf('?');
-    const filePath = decodeURIComponent(imageUrl.substring(pathStart, pathEnd));
-
-    // Create a reference and delete
-    const imageRef = ref(storage, filePath);
+    // The SDK can create a reference directly from the download URL.
+    const imageRef = ref(storage, imageUrl);
     await deleteObject(imageRef);
-    console.log('Image deleted successfully:', filePath);
+    console.log('Image deleted successfully:', imageUrl);
   } catch (error) {
-    console.error('Error deleting image:', error);
-    // Don't throw - we don't want to prevent card deletion if image deletion fails
+    // It's often safe to ignore "object-not-found" errors during cleanup
+    if (error.code === 'storage/object-not-found') {
+      console.log("Image to delete was not found, which is okay.");
+    } else {
+      console.error('Error deleting image:', error);
+      // We don't re-throw here because a failed image deletion shouldn't
+      // prevent the parent operation (like deleting a card) from completing.
+    }
   }
 };
