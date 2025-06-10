@@ -1,28 +1,10 @@
 // src/services/ImageUploadService.js
-import * as ImagePicker from 'expo-image-picker';
+import ImageCropPicker from 'react-native-image-crop-picker';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage } from '../config/FirebaseConfig';
 import { Alert, ActionSheetIOS, Platform } from 'react-native';
 
-// Helper function to get necessary permissions
-const getPermissions = async () => {
-  const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
-  const { status: libraryStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-  if (libraryStatus !== 'granted' || cameraStatus !== 'granted') {
-    Alert.alert(
-      'Permission Required',
-      'We need access to your camera and photo library to add images.'
-    );
-    return false;
-  }
-  return true;
-};
-
 export const pickImage = async () => {
-  const hasPermissions = await getPermissions();
-  if (!hasPermissions) return null;
-
   try {
     // Show options for image source using a Promise-based wrapper for the ActionSheet
     const choice = await new Promise((resolve) => {
@@ -47,46 +29,49 @@ export const pickImage = async () => {
       }
     });
 
-    // Handle user's choice
-    if (choice === 2 || choice === undefined) { // 2 is Cancel, undefined if dismissed on Android
+    if (choice === 2 || choice === undefined) {
+      console.log('User cancelled image picker.');
       return null;
     }
 
-    const pickerOptions = {
-      mediaTypes: ImagePicker.MediaType.Images,
-      allowsEditing: true,
-      aspect: [1.586, 1], // Credit card aspect ratio
-      quality: 0.7,
+    const cropOptions = {
+      width: 856, // Standard credit card pixels (85.6mm * 10)
+      height: 540, // Standard credit card pixels (54.0mm * 10)
+      cropping: true,
+      compressImageQuality: 0.8, // Good balance of quality and size
+      mediaType: 'photo',
     };
 
-    let result;
+    let image;
     if (choice === 0) { // Take Photo
-      result = await ImagePicker.launchCameraAsync(pickerOptions);
+      image = await ImageCropPicker.openCamera(cropOptions);
     } else { // Choose from Library
-      result = await ImagePicker.launchImageLibraryAsync(pickerOptions);
+      image = await ImageCropPicker.openPicker(cropOptions);
     }
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      return result.assets[0].uri;
-    }
-
-    return null;
+    // The result object contains the path to the cropped image
+    return image.path;
 
   } catch (error) {
+    // A common "error" is the user cancelling the picker.
+    if (error.code === 'E_PICKER_CANCELLED') {
+      console.log('User cancelled image picker.');
+      return null;
+    }
     console.error('Error during image picking process:', error);
     Alert.alert('Error', 'An unexpected error occurred while selecting the image.');
     return null;
   }
 };
 
-export const uploadCardImage = async (imageUri, cardId) => {
+export const uploadCardImage = async (imageUri, cardId, userId) => {
+  if (!userId) {
+    throw new Error('User ID is required for image upload');
+  }
+
   try {
     console.log('Starting upload for:', imageUri);
-    
-    // Create a unique filename
-    const filename = `card-images/${cardId}-${Date.now()}.jpg`;
-    
-    // Convert image to blob
+    const filename = `users/${userId}/card-images/${cardId}-${Date.now()}.jpg`;
     const response = await fetch(imageUri);
     if (!response.ok) throw new Error('Failed to fetch image for upload.');
     
@@ -94,11 +79,16 @@ export const uploadCardImage = async (imageUri, cardId) => {
     console.log('Blob created, size:', blob.size);
     
     const storageRef = ref(storage, filename);
-    const metadata = { contentType: 'image/jpeg' };
+    const metadata = { 
+      contentType: 'image/jpeg',
+      customMetadata: {
+        userId: userId,
+        cardId: cardId
+      }
+    };
     
     console.log('Uploading to:', filename);
     const snapshot = await uploadBytes(storageRef, blob, metadata);
-    
     const downloadURL = await getDownloadURL(snapshot.ref);
     console.log('Download URL obtained:', downloadURL);
     
@@ -106,29 +96,31 @@ export const uploadCardImage = async (imageUri, cardId) => {
   } catch (error) {
     console.error('Error uploading image:', error);
     Alert.alert('Upload Failed', 'Could not upload the image. Please check your connection and try again.');
-    throw error; // Re-throw to be caught by the calling function
+    throw error;
   }
 };
 
-export const deleteCardImage = async (imageUrl) => {
+export const deleteCardImage = async (imageUrl, userId) => {
   if (!imageUrl || !imageUrl.startsWith('https://firebasestorage.googleapis.com')) {
     console.log("Not a Firebase Storage URL, skipping delete.");
     return;
   }
 
+  if (!userId) {
+    console.error('User ID is required for image deletion');
+    return;
+  }
+
   try {
-    // The SDK can create a reference directly from the download URL.
     const imageRef = ref(storage, imageUrl);
     await deleteObject(imageRef);
     console.log('Image deleted successfully:', imageUrl);
-  } catch (error) {
-    // It's often safe to ignore "object-not-found" errors during cleanup
+  } catch (error)
+ {
     if (error.code === 'storage/object-not-found') {
       console.log("Image to delete was not found, which is okay.");
     } else {
       console.error('Error deleting image:', error);
-      // We don't re-throw here because a failed image deletion shouldn't
-      // prevent the parent operation (like deleting a card) from completing.
     }
   }
 };

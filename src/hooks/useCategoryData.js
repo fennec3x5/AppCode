@@ -3,38 +3,50 @@ import { useState, useEffect, useCallback } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApi } from '../context/ApiContext';
-import { DEFAULT_CATEGORIES, CUSTOM_CATEGORIES_KEY, FAVORITE_CATEGORIES_KEY } from '../config/categories';
+import { useAuth } from '../context/AuthContext';
+import { DEFAULT_CATEGORIES, FAVORITE_CATEGORIES_KEY } from '../config/categories';
 
 export const useCategoryData = () => {
   const [categories, setCategories] = useState([]);
   const [favoriteIds, setFavoriteIds] = useState(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const api = useApi();
+  const { user } = useAuth();
 
   // Helper to ensure we are always working with an array
   const getSafeArray = (arr) => (Array.isArray(arr) ? arr : []);
 
   const loadData = useCallback(async () => {
+    if (!user) {
+      setCategories(getSafeArray(DEFAULT_CATEGORIES));
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const storedCustom = await AsyncStorage.getItem(CUSTOM_CATEGORIES_KEY);
-      // Use helper for safety
-      const savedCustomCategories = getSafeArray(storedCustom ? JSON.parse(storedCustom) : []);
+      // Get user profile with custom categories
+      const userProfile = await api.getUserProfile();
+      const userCustomCategories = getSafeArray(userProfile.customCategories);
 
-      const storedFavorites = await AsyncStorage.getItem(FAVORITE_CATEGORIES_KEY);
+      // Get favorite categories for this user
+      const favKey = `${FAVORITE_CATEGORIES_KEY}_${user.uid}`;
+      const storedFavorites = await AsyncStorage.getItem(favKey);
       const savedFavoriteIds = storedFavorites ? new Set(JSON.parse(storedFavorites)) : new Set();
       
+      // Get all cards to find categories in use
       const allCards = await api.getCards();
       const categoriesFromCards = new Set();
-      // Use helper here to prevent crash if API returns non-array
+      
       getSafeArray(allCards).forEach(card => {
         card.bonuses?.forEach(bonus => {
           if (bonus.categoryName) categoriesFromCards.add(bonus.categoryName);
         });
       });
       
+      // Check which categories from cards are not in our list
       const existingCategoryNames = new Set(
-        [...getSafeArray(DEFAULT_CATEGORIES), ...savedCustomCategories].map(c => c.name.toLowerCase())
+        [...getSafeArray(DEFAULT_CATEGORIES), ...userCustomCategories].map(c => c.name.toLowerCase())
       );
 
       const newDiscoveredCategories = [];
@@ -50,15 +62,18 @@ export const useCategoryData = () => {
         }
       });
 
-      const allCustomCategories = [...savedCustomCategories, ...newDiscoveredCategories];
+      // If we found new categories, update user's custom categories
       if (newDiscoveredCategories.length > 0) {
-        await AsyncStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(allCustomCategories));
+        const allCustomCategories = [...userCustomCategories, ...newDiscoveredCategories];
+        await api.updateUserCategories(allCustomCategories);
       }
       
-      // Final safe composition before sorting
-      const allCategories = [...getSafeArray(DEFAULT_CATEGORIES), ...allCustomCategories].sort((a, b) => 
-        a.name.localeCompare(b.name)
-      );
+      // Combine all categories
+      const allCategories = [
+        ...getSafeArray(DEFAULT_CATEGORIES), 
+        ...userCustomCategories,
+        ...newDiscoveredCategories
+      ].sort((a, b) => a.name.localeCompare(b.name));
 
       setCategories(allCategories);
       setFavoriteIds(savedFavoriteIds);
@@ -69,20 +84,30 @@ export const useCategoryData = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [api]);
+  }, [api, user]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
   const saveCustomCategories = async (customCats) => {
-    const catsToSave = getSafeArray(customCats);
-    await AsyncStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(catsToSave));
+    if (!user) return;
     
-    const allCategories = [...getSafeArray(DEFAULT_CATEGORIES), ...catsToSave].sort((a, b) => 
-      a.name.localeCompare(b.name)
-    );
-    setCategories(allCategories);
+    const catsToSave = getSafeArray(customCats);
+    
+    try {
+      // Save to server
+      await api.updateUserCategories(catsToSave);
+      
+      // Update local state
+      const allCategories = [...getSafeArray(DEFAULT_CATEGORIES), ...catsToSave].sort((a, b) => 
+        a.name.localeCompare(b.name)
+      );
+      setCategories(allCategories);
+    } catch (error) {
+      console.error('Failed to save custom categories:', error);
+      Alert.alert('Error', 'Could not save categories. Please try again.');
+    }
   };
 
   const addCategory = async (newCategoryData) => {
@@ -96,27 +121,33 @@ export const useCategoryData = () => {
     return newCategory;
   };
   
-  const updateCategory = (id, updatedData) => {
+  const updateCategory = async (id, updatedData) => {
     const customCats = categories.filter(c => c.isCustom);
     const updated = customCats.map(cat => (cat.id === id ? { ...cat, ...updatedData } : cat));
-    saveCustomCategories(updated);
+    await saveCustomCategories(updated);
   };
   
-  const deleteCategory = (idToDelete) => {
+  const deleteCategory = async (idToDelete) => {
     const customCats = categories.filter(c => c.isCustom);
     const updated = customCats.filter(cat => cat.id !== idToDelete);
-    saveCustomCategories(updated);
+    await saveCustomCategories(updated);
   };
 
   const toggleFavorite = useCallback(async (categoryId) => {
+    if (!user) return;
+    
     setFavoriteIds(prevIds => {
       const newIds = new Set(prevIds);
       if (newIds.has(categoryId)) newIds.delete(categoryId);
       else newIds.add(categoryId);
-      AsyncStorage.setItem(FAVORITE_CATEGORIES_KEY, JSON.stringify(Array.from(newIds)));
+      
+      // Save user-specific favorites
+      const favKey = `${FAVORITE_CATEGORIES_KEY}_${user.uid}`;
+      AsyncStorage.setItem(favKey, JSON.stringify(Array.from(newIds)));
+      
       return newIds;
     });
-  }, []);
+  }, [user]);
 
   return { 
     categories, 

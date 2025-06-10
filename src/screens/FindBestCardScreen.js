@@ -24,12 +24,9 @@ export default function FindBestCardScreen() {
   const { categories, favoriteIds, loadData: loadCategoryData } = useCategoryData();
   const { results, loading, error, search, clearSearch } = useCardFinder();
 
-  // --- THE FIX IS HERE ---
-  // Use the correct variable name: loadCategoryData
   useFocusEffect(useCallback(() => {
     loadCategoryData();
   }, []));
-  // --- END OF FIX ---
 
   const favoriteCategories = useMemo(() => {
     if (!categories || !favoriteIds) return [];
@@ -101,12 +98,6 @@ export default function FindBestCardScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Icon name="search" size={40} color="#FFF" />
-        <Text style={styles.headerTitle}>Find Your Best Card</Text>
-        <Text style={styles.headerSubtitle}>Which card should you use?</Text>
-      </View>
-      
       <View style={styles.searchSection}>
           <View style={styles.searchControlsRow}>
               <TouchableOpacity style={styles.categorySelector} onPress={() => setShowCategoryPicker(true)}>
@@ -167,21 +158,9 @@ export default function FindBestCardScreen() {
   );
 }
 
-// Styles are unchanged from the last stable version
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: {
-    backgroundColor: colors.primary,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.md,
-    alignItems: 'center',
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-  },
-  headerTitle: { ...typography.h2, color: colors.surface, marginTop: spacing.md },
-  headerSubtitle: { ...typography.body1, color: colors.surface, opacity: 0.9 },
   searchSection: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.xl,

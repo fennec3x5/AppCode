@@ -7,6 +7,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import * as Notifications from 'expo-notifications';
+import { View, ActivityIndicator, StyleSheet, Text, TouchableOpacity } from 'react-native';
 
 // Import screens
 import CardListScreen from './src/screens/CardListScreen';
@@ -15,16 +16,20 @@ import AddEditCardScreen from './src/screens/AddEditCardScreen';
 import FindBestCardScreen from './src/screens/FindBestCardScreen';
 import AddEditBonusScreen from './src/screens/AddEditBonusScreen';
 import CategoriesScreen from './src/screens/CategoriesScreen';
+import LoginScreen from './src/screens/LoginScreen';
+import RegisterScreen from './src/screens/RegisterScreen';
+import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 
 // Import services and context
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { ApiProvider } from './src/context/ApiContext';
 import { PushNotificationService } from './src/services/PushNotificationService';
-import { colors, typography } from './src/config/Theme'; // Import theme for consistency
+import { colors, typography } from './src/config/Theme';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-// --- Centralized Stack Navigator options for a cleaner look ---
+// Stack Navigator options
 const stackNavigatorOptions = {
   headerStyle: {
     backgroundColor: colors.primary,
@@ -33,10 +38,21 @@ const stackNavigatorOptions = {
   headerTitleStyle: {
     ...typography.h4,
   },
-  headerBackTitleVisible: false, // Cleaner look on iOS
+  headerBackTitleVisible: false,
 };
 
-// --- The Cards navigation stack ---
+// Auth Stack
+function AuthStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Register" component={RegisterScreen} />
+      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+    </Stack.Navigator>
+  );
+}
+
+// Cards Stack
 function CardsStack() {
   return (
     <Stack.Navigator screenOptions={stackNavigatorOptions}>
@@ -64,72 +80,143 @@ function CardsStack() {
   );
 }
 
-// --- The main App component ---
-export default function App() {
-  
-  useEffect(() => {
-    // 1. Initialize the service (sets notification handler)
-    PushNotificationService.initialize();
-    
-    // 2. Register the device (gets permissions and token)
-    PushNotificationService.register();
+// Main Tab Navigator
+function MainTabs() {
+  return (
+    <Tab.Navigator
+      initialRouteName="Find Best Card"
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+          if (route.name === 'Cards') iconName = 'credit-card';
+          else if (route.name === 'Find Best Card') iconName = 'search';
+          else if (route.name === 'Categories') iconName = 'category';
+          else if (route.name === 'Profile') iconName = 'person';
+          return <Icon name={iconName} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textLight,
+        headerStyle: stackNavigatorOptions.headerStyle,
+        headerTintColor: stackNavigatorOptions.headerTintColor,
+        headerTitleStyle: stackNavigatorOptions.headerTitleStyle,
+      })}
+    >
+      <Tab.Screen 
+        name="Find Best Card" 
+        component={FindBestCardScreen} 
+      />
+      <Tab.Screen 
+        name="Cards" 
+        component={CardsStack} 
+        options={{ headerShown: false }}
+      />
+      <Tab.Screen 
+        name="Categories" 
+        component={CategoriesScreen} 
+      />
+      <Tab.Screen 
+        name="Profile" 
+        component={ProfileScreen} 
+      />
+    </Tab.Navigator>
+  );
+}
 
-    // 3. Set up listeners for app interaction (optional but good practice)
+// Profile Screen (simple placeholder for now)
+function ProfileScreen() {
+  const { user, logout } = useAuth();
+  
+  return (
+    <View style={styles.profileContainer}>
+      <Icon name="person" size={80} color={colors.primary} />
+      <Text style={styles.profileEmail}>{user?.email}</Text>
+      <TouchableOpacity style={styles.logoutButton} onPress={logout}>
+        <Text style={styles.logoutButtonText}>Sign Out</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// App Navigator that handles auth state
+function AppNavigator() {
+  const { isAuthenticated, loading } = useAuth();
+
+  useEffect(() => {
+    PushNotificationService.initialize();
+    if (isAuthenticated) {
+      PushNotificationService.register();
+    }
+
     const notificationListener = Notifications.addNotificationReceivedListener(notification => {
       console.log('Notification Received:', notification);
     });
 
     const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
       console.log('Notification Tapped:', response);
-      // Here you can add logic to navigate to a specific screen
-      // e.g., if (response.notification.request.content.data.cardId) { ... }
     });
 
-    // Cleanup function to remove listeners when the app unmounts
     return () => {
       notificationListener.remove();
       responseListener.remove();
     };
-  }, []);
+  }, [isAuthenticated]);
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
-    <ApiProvider>
-      <SafeAreaProvider>
-        <NavigationContainer>
-          <Tab.Navigator
-            initialRouteName="Find Best Card"
-            screenOptions={({ route }) => ({
-              tabBarIcon: ({ focused, color, size }) => {
-                let iconName;
-                if (route.name === 'Cards') iconName = 'credit-card';
-                else if (route.name === 'Find Best Card') iconName = 'search';
-                else if (route.name === 'Categories') iconName = 'category';
-                return <Icon name={iconName} size={size} color={color} />;
-              },
-              tabBarActiveTintColor: colors.primary,
-              tabBarInactiveTintColor: colors.textLight,
-              // Use the same header style as the stack navigator for consistency
-              headerStyle: stackNavigatorOptions.headerStyle,
-              headerTintColor: stackNavigatorOptions.headerTintColor,
-              headerTitleStyle: stackNavigatorOptions.headerTitleStyle,
-            })}
-          >
-            <Tab.Screen 
-              name="Find Best Card" 
-              component={FindBestCardScreen} 
-            />
-            <Tab.Screen 
-              name="Cards" 
-              component={CardsStack} 
-              options={{ headerShown: false }} // Hide tab header to show stack header
-            />
-            <Tab.Screen 
-              name="Categories" 
-              component={CategoriesScreen} 
-            />
-          </Tab.Navigator>
-        </NavigationContainer>
-      </SafeAreaProvider>
-    </ApiProvider>
+    <NavigationContainer>
+      {isAuthenticated ? <MainTabs /> : <AuthStack />}
+    </NavigationContainer>
   );
 }
+
+// Main App component
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AuthProvider>
+        <ApiProvider>
+          <AppNavigator />
+        </ApiProvider>
+      </AuthProvider>
+    </SafeAreaProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+  },
+  profileContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    padding: 20,
+  },
+  profileEmail: {
+    ...typography.h4,
+    color: colors.text,
+    marginTop: 20,
+    marginBottom: 40,
+  },
+  logoutButton: {
+    backgroundColor: colors.error,
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 25,
+  },
+  logoutButtonText: {
+    ...typography.button,
+    color: '#fff',
+  },
+});
